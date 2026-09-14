@@ -18,8 +18,10 @@ import { createNarrativeManager } from './story.js';
 let camera, scene, renderer, controls, composer, mixer;
 let water, model, moon, waterNormalMap, starrySky;
 let windowsController;
-
-const STORY_MODE = true;
+let audioContext = null;
+let musicGainNode = null;
+let appStarted = false;
+let STORY_MODE = true;
 
 const narrativeElement = document.getElementById('narrative-text');
 const blackoutElement = document.getElementById('story-blackout');
@@ -30,23 +32,103 @@ const WINDOW_SEQUENCE = [
     'window-2',
     'window-3-front',
     'window-4-clothes',
-    'window-5-fan', 
+    'window-5-fan',
 ];
 
 let clock = new THREE.Clock();
 let mixerClock = new THREE.Clock();
 
-init();
-animate(); 
+window.setGameMode = function (isStoryMode) {
+    STORY_MODE = !!isStoryMode;
+    if (controls) {
+        controls.enabled = !STORY_MODE;
+    }
+};
+
+window.toggleMusic = function () {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return false;
+
+    if (!audioContext) {
+        audioContext = new AudioCtor();
+        musicGainNode = audioContext.createGain();
+        musicGainNode.gain.value = 0.0;
+        musicGainNode.connect(audioContext.destination);
+    }
+
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+
+    const button = document.getElementById('music-toggle');
+    if (button) {
+        const isOn = !button.dataset.musicOn || button.dataset.musicOn === 'false';
+        button.dataset.musicOn = String(isOn);
+        button.textContent = isOn ? 'Music: On' : 'Music: Off';
+
+        if (musicGainNode) {
+            musicGainNode.gain.value = 0.0; // MUSIC MUTED
+        }
+    }
+
+    return !!(button && button.dataset.musicOn === 'true');
+};
+
+window.startGame = function (isStoryMode) {
+    STORY_MODE = !!isStoryMode;
+    const menu = document.getElementById('title-screen');
+    if (menu) menu.style.display = 'none';
+
+    if (!appStarted) {
+        appStarted = true;
+        init();
+        animate();
+    }
+
+    if (controls) {
+        controls.enabled = !STORY_MODE;
+    }
+};
+
+function setupTitleScreen() {
+    const musicButton = document.getElementById('music-toggle');
+    const storyButton = document.getElementById('start-story');
+    const graphicsButton = document.getElementById('start-graphics');
+
+    if (musicButton) {
+        musicButton.dataset.musicOn = 'false';
+        musicButton.addEventListener('click', () => {
+            window.toggleMusic();
+        });
+    }
+
+    if (storyButton) {
+        storyButton.addEventListener('click', () => {
+            window.startGame(true);
+        });
+    }
+
+    if (graphicsButton) {
+        graphicsButton.addEventListener('click', () => {
+            window.startGame(false);
+        });
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupTitleScreen);
+} else {
+    setupTitleScreen();
+}
 
 function init() {
-    
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1f1c38); // 0x050810
-    scene.environment = scene.background;
-    scene.fog = new THREE.Fog(0x1f1c38, 10, 100); 
 
-    camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 1000);
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1f1c38);
+    scene.environment = scene.background;
+    scene.fog = new THREE.Fog(0x1f1c38, 10, 100);
+
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 1000);
     if (!STORY_MODE) camera.position.set(20, 15, 30); 
 
     /* ---------------------------------------------- */
@@ -156,11 +238,8 @@ function init() {
 
         handleWindowClick(windowsController, camera, ndcX, ndcY);
     });
- 
-
 
     window.addEventListener('resize', onWindowResize);
-
 }
 
 function onWindowResize() {
