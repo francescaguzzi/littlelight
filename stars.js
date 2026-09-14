@@ -1,77 +1,52 @@
 import * as THREE from 'three';
 
-/** 
- * Creates a starry sky with twinkling stars. Each star is a plane with a star texture, and the twinkling effect is 
- * achieved using a sine function in the vertex shader.
- * The whole sky is represented as an InstancedMesh for performance, allowing thousands of stars to be rendered efficiently.
- * @param {number} starsCount - The number of stars to create.
- * @returns {THREE.InstancedMesh} The instanced mesh representing the starry sky.
- */
-export function createStarrySky(starsCount = 2000) {
+function createStarChunk(count, baseIndex = 0) {
+    const starGeometry = new THREE.PlaneGeometry(1.5, 1.5, 1, 1);
 
-    const starGeometry = new THREE.PlaneGeometry(1.5, 1.5, 1, 1); 
-    
-    // array for storing the phase of each star for twinkling effect
-    const phases = new Float32Array(starsCount);
-    for(let i = 0; i < starsCount; i++) {
-        phases[i] = Math.random() * Math.PI * 2; 
+    const phases = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+        phases[i] = Math.random() * Math.PI * 2;
     }
-    
-    // we use instanced buffer attributes to store the phase for each star
-    starGeometry.setAttribute(
-        'aPhase', 
-        new THREE.InstancedBufferAttribute(phases, 1)
-    );
+
+    starGeometry.setAttribute('aPhase', new THREE.InstancedBufferAttribute(phases, 1));
 
     const textureLoader = new THREE.TextureLoader();
     const starTexture = textureLoader.load('./assets/stella.png');
-    
+
     const starMaterial = new THREE.ShaderMaterial({
         uniforms: {
-            uTime: { value: 0 }, // from main.js, we will update this uniform every frame
-            uTexture: { value: starTexture } 
+            uTime: { value: 0 },
+            uTexture: { value: starTexture }
         },
-        
         vertexShader: `
-            
             attribute float aPhase;
-            
-            // Fragment shader variables
+
             varying vec3 vColor;
             varying vec2 vUv;
             varying float vAlpha;
-            
+
             uniform float uTime;
-            
+
             void main() {
                 vColor = instanceColor;
                 vUv = uv;
-                
-                // LA MAGIA: Calcoliamo il lampeggio usando il seno del tempo + lo sfasamento.
-                // Moltiplichiamo uTime per gestire la velocità dello scintillio.
-                // Il seno va da -1 a 1, mappiamolo da 0.2 (luminosità minima) a 1.0 (massima).
-                float twinkle = sin(uTime * 2.0 + aPhase) * 0.5 + 0.5; 
-                vAlpha = mix(0.1, 1.0, twinkle); 
-                
-                // Calcolo standard della posizione per un InstancedMesh
+
+                float twinkle = sin(uTime * 2.0 + aPhase) * 0.5 + 0.5;
+                vAlpha = mix(0.1, 1.0, twinkle);
+
                 vec4 mvPosition = viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0);
                 gl_Position = projectionMatrix * mvPosition;
             }
         `,
-        
         fragmentShader: `
             uniform sampler2D uTexture;
-            
+
             varying vec3 vColor;
             varying vec2 vUv;
             varying float vAlpha;
-            
+
             void main() {
-                // Leggiamo il pixel dalla texture
                 vec4 texColor = texture2D(uTexture, vUv);
-                
-                // Moltiplichiamo il colore della texture per il colore della stella 
-                // e applichiamo l'alpha (trasparenza) calcolata nel vertex shader
                 gl_FragColor = vec4(texColor.rgb * vColor, texColor.a * vAlpha);
             }
         `,
@@ -80,34 +55,97 @@ export function createStarrySky(starsCount = 2000) {
         blending: THREE.AdditiveBlending,
         fog: false
     });
-    
-    const starUniverse = new THREE.InstancedMesh(starGeometry, starMaterial, starsCount);
-    
+
+    const chunkMesh = new THREE.InstancedMesh(starGeometry, starMaterial, count);
     const dummy = new THREE.Object3D();
     const color = new THREE.Color();
-    
-    for (let i = 0; i < starsCount; i++) {
-        const x = (Math.random() - 0.5) * 600;     
-        const y = Math.random() * 300 + 20;      
-        const z = (Math.random() - 0.5) * 600;   
-        
+
+    const localPositions = [];
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+    for (let i = 0; i < count; i++) {
+        const x = (Math.random() - 0.5) * 600;
+        const y = Math.random() * 300 + 20;
+        const z = (Math.random() - 0.5) * 600;
+
+        localPositions.push(new THREE.Vector3(x, y, z));
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        minZ = Math.min(minZ, z);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+        maxZ = Math.max(maxZ, z);
+
         dummy.position.set(x, y, z);
-        dummy.lookAt(0, 0, 0); 
-        dummy.rotateZ(Math.random() * Math.PI * 2); 
+        dummy.lookAt(0, 0, 0);
+        dummy.rotateZ(Math.random() * Math.PI * 2);
         dummy.updateMatrix();
-        
-        starUniverse.setMatrixAt(i, dummy.matrix);
-        
+
+        chunkMesh.setMatrixAt(i, dummy.matrix);
+
         const randomColor = Math.random();
-        if (randomColor > 0.7) { color.setHex(0xffffff); } 
-        else if (randomColor > 0.4) { color.setHex(0xaaccff); } 
-        else { color.setHex(0xffddaa); }
-        
-        starUniverse.setColorAt(i, color);
+        if (randomColor > 0.7) color.setHex(0xffffff);
+        else if (randomColor > 0.4) color.setHex(0xaaccff);
+        else color.setHex(0xffddaa);
+
+        chunkMesh.setColorAt(i, color);
     }
-    
-    starUniverse.instanceMatrix.needsUpdate = true;
-    starUniverse.instanceColor.needsUpdate = true;
-    
-    return starUniverse;
+
+    const center = new THREE.Vector3(
+        (minX + maxX) * 0.5,
+        (minY + maxY) * 0.5,
+        (minZ + maxZ) * 0.5
+    );
+
+    let radius = 0;
+    for (const point of localPositions) {
+        radius = Math.max(radius, center.distanceTo(point));
+    }
+
+    chunkMesh.userData.frustumSphere = new THREE.Sphere(center, radius + 4);
+    chunkMesh.userData.baseIndex = baseIndex;
+    chunkMesh.instanceMatrix.needsUpdate = true;
+    chunkMesh.instanceColor.needsUpdate = true;
+
+    return chunkMesh;
+}
+
+/**
+ * Creates a starry sky by splitting the field into smaller chunks so each chunk can be
+ * individually frustum-culled without forcing the whole sky to remain visible.
+ * @param {number} starsCount - Total number of stars.
+ * @param {number} chunkSize - How many stars each instanced batch should contain.
+ * @returns {THREE.Group} The star field container.
+ */
+export function createStarrySky(starsCount = 2000, chunkSize = 250) {
+    const starField = new THREE.Group();
+    const chunkCount = Math.ceil(starsCount / chunkSize);
+
+    for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++) {
+        const currentCount = Math.min(chunkSize, starsCount - (chunkIndex * chunkSize));
+        const chunk = createStarChunk(currentCount, chunkIndex * chunkSize);
+        starField.add(chunk);
+    }
+
+    return starField;
+}
+
+export function updateStarrySkyVisibility(starField, camera) {
+    if (!starField || !camera) return;
+
+    const projectionViewMatrix = new THREE.Matrix4().multiplyMatrices(
+        camera.projectionMatrix,
+        camera.matrixWorldInverse
+    );
+    const frustum = new THREE.Frustum();
+    frustum.setFromProjectionMatrix(projectionViewMatrix);
+
+    starField.traverse((child) => {
+        if (!child.isInstancedMesh || !child.userData.frustumSphere) return;
+
+        const worldSphere = child.userData.frustumSphere.clone();
+        worldSphere.applyMatrix4(child.matrixWorld);
+        child.visible = frustum.intersectsSphere(worldSphere);
+    });
 }

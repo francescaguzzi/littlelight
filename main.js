@@ -7,7 +7,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-import { createStarrySky } from './stars.js';
+import { createStarrySky, updateStarrySkyVisibility } from './stars.js';
 import { initLittleStar, updateStarLogic, isWindowFocusActive } from './littlestar.js';
 import { createWater } from './water.js';
 import { setupWindows, updateWindows, handleWindowClick, isPointerOverCurrentWindow, cancelWindowFocus } from './windows.js';
@@ -20,7 +20,6 @@ let water, model, moon, waterNormalMap, starrySky;
 let windowsController;
 
 const STORY_MODE = true;
-
 
 const narrativeElement = document.getElementById('narrative-text');
 const blackoutElement = document.getElementById('story-blackout');
@@ -187,8 +186,14 @@ function animate() {
     }
 
     if (starrySky) {
+        updateStarrySkyVisibility(starrySky, camera);
         starrySky.rotation.y -= 0.0003;
-        starrySky.material.uniforms.uTime.value = t;
+
+        starrySky.traverse((child) => {
+            if (child.isInstancedMesh && child.material && child.material.uniforms) {
+                child.material.uniforms.uTime.value = t;
+            }
+        });
     }
 
     if (STORY_MODE && windowsController) {

@@ -64,7 +64,7 @@ export function restoreInteractiveFromWindowFocus() {
 
 // Funzione per inizializzare la stella e i controlli
 export function initLittleStar(scene) {
-    const starTexture = new THREE.TextureLoader().load('/assets/stella.png');
+    const starTexture = new THREE.TextureLoader().load('./assets/stella.png');
     const littleGeo = new THREE.PlaneGeometry(0.5, 0.5);
     const littleMat = new THREE.MeshBasicMaterial({
         map: starTexture,
