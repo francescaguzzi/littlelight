@@ -38,10 +38,96 @@ const WINDOW_SEQUENCE = [
 let clock = new THREE.Clock();
 let mixerClock = new THREE.Clock();
 
+const graphicsSettings = {
+    toneMappingEnabled: true,
+    toneMappingExposure: 1.0,
+    bloomEnabled: true,
+    bloomIntensity: 0.9,
+    bloomRadius: 1.0,
+    bloomThreshold: 0.7,
+    starCount: 2000,
+    waterColor: '#34506C'
+};
+let graphicsGui = null;
+
+function applyGraphicsSettings() {
+    if (!renderer) return;
+
+    renderer.toneMapping = graphicsSettings.toneMappingEnabled ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+    renderer.toneMappingExposure = graphicsSettings.toneMappingExposure;
+
+    if (composer) {
+        const bloomPass = composer.passes.find((pass) => pass instanceof UnrealBloomPass);
+        if (bloomPass) {
+            bloomPass.enabled = graphicsSettings.bloomEnabled;
+            bloomPass.strength = graphicsSettings.bloomIntensity;
+            bloomPass.radius = graphicsSettings.bloomRadius;
+            bloomPass.threshold = graphicsSettings.bloomThreshold;
+        }
+    }
+
+    if (water && water.material && water.material.uniforms && water.material.uniforms.waterColor) {
+        water.material.uniforms.waterColor.value.set(graphicsSettings.waterColor);
+    }
+}
+
+function updateStarCount(newCount) {
+    const count = Math.max(200, Math.min(8000, Number(newCount) || 2000));
+    graphicsSettings.starCount = count;
+
+    if (!scene || !starrySky) return;
+
+    scene.remove(starrySky);
+    starrySky = createStarrySky(count, 250);
+    scene.add(starrySky);
+}
+
+function destroyGraphicsGui() {
+    if (graphicsGui) {
+        graphicsGui.destroy();
+        graphicsGui = null;
+    }
+}
+
+function createGraphicsGui() {
+    if (graphicsGui || typeof dat === 'undefined') return;
+
+    graphicsGui = new dat.GUI();
+
+    const rendererFolder = graphicsGui.addFolder('Renderer');
+    rendererFolder.add(graphicsSettings, 'toneMappingEnabled').name('Tone mapping');
+    rendererFolder.add(graphicsSettings, 'toneMappingExposure', 0.1, 3.0, 0.01).name('Exposure');
+
+    const bloomFolder = graphicsGui.addFolder('Bloom');
+    bloomFolder.add(graphicsSettings, 'bloomEnabled').name('Enable bloom');
+    bloomFolder.add(graphicsSettings, 'bloomIntensity', 0.0, 3.0, 0.01).name('Intensity');
+    bloomFolder.add(graphicsSettings, 'bloomRadius', 0.0, 2.5, 0.01).name('Radius');
+    bloomFolder.add(graphicsSettings, 'bloomThreshold', 0.0, 2.0, 0.01).name('Threshold');
+
+    const skyFolder = graphicsGui.addFolder('Sky');
+    skyFolder.add(graphicsSettings, 'starCount', 200, 6000, 50).name('Star count').onChange((value) => {
+        updateStarCount(value);
+    });
+
+    const waterFolder = graphicsGui.addFolder('Water');
+    waterFolder.addColor(graphicsSettings, 'waterColor').name('Water color').onChange((value) => {
+        graphicsSettings.waterColor = value;
+        if (water && water.material && water.material.uniforms && water.material.uniforms.waterColor) {
+            water.material.uniforms.waterColor.value.set(value);
+        }
+    });
+}
+
 window.setGameMode = function (isStoryMode) {
     STORY_MODE = !!isStoryMode;
     if (controls) {
         controls.enabled = !STORY_MODE;
+    }
+
+    if (STORY_MODE) {
+        destroyGraphicsGui();
+    } else {
+        createGraphicsGui();
     }
 };
 
@@ -87,6 +173,12 @@ window.startGame = function (isStoryMode) {
 
     if (controls) {
         controls.enabled = !STORY_MODE;
+    }
+
+    if (STORY_MODE) {
+        destroyGraphicsGui();
+    } else {
+        createGraphicsGui();
     }
 };
 
@@ -139,8 +231,8 @@ function init() {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     document.body.appendChild(renderer.domElement);
 
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.toneMapping = graphicsSettings.toneMappingEnabled ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+    renderer.toneMappingExposure = graphicsSettings.toneMappingExposure;
 
     const renderTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
         type: THREE.HalfFloatType,
@@ -155,11 +247,12 @@ function init() {
 
     const bloomPass = new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2),
-        0.9, // intensity
-        1, // radius
-        0.7 // threshold
+        graphicsSettings.bloomIntensity,
+        graphicsSettings.bloomRadius,
+        graphicsSettings.bloomThreshold
     );
     composer.addPass(bloomPass);
+    applyGraphicsSettings();
     const outputPass = new OutputPass();
     composer.addPass(outputPass);
 
@@ -181,10 +274,11 @@ function init() {
 
     if (STORY_MODE) initLittleStar(scene);
 
-    starrySky = createStarrySky();
+    starrySky = createStarrySky(graphicsSettings.starCount, 250);
     scene.add(starrySky);
 
     water = createWater(moon, scene.fog !== undefined);
+    water.material.uniforms.waterColor.value.set(graphicsSettings.waterColor);
     scene.add(water);
 
     /* ---------------------------------------------- */
@@ -263,6 +357,8 @@ function animate() {
     if (water && water.material) {
         water.material.uniforms['time'].value += 0.004;
     }
+
+    applyGraphicsSettings();
 
     if (starrySky) {
         updateStarrySkyVisibility(starrySky, camera);
