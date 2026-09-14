@@ -32,7 +32,7 @@ export const CUTSCENE_SCRIPT = {
 };
 
 export const WINDOW_VIGNETTE_TEXTS = {
-    'window-front': [
+    'window-1': [
         'The little star was fascinated by the world of humans.',
         'She saw them from afar, and she wanted to be part of their lives.',
         'She wanted to make their dreams come true, just like the other stars did.',

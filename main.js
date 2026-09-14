@@ -16,12 +16,16 @@ import { createNarrativeManager } from './story.js';
 /* ----------------------------------------------- */
 
 let camera, scene, renderer, controls, composer, mixer;
-let water, model, moon, waterNormalMap, starrySky;
+let water, model, moon, starrySky;
 let windowsController;
-let audioContext = null;
-let musicGainNode = null;
 let appStarted = false;
+
 let STORY_MODE = true;
+
+let seaAudio = null;
+let songAudio = null;
+let storyAudioEnabled = false;
+let storyAudioStarted = false;
 
 const narrativeElement = document.getElementById('narrative-text');
 const blackoutElement = document.getElementById('story-blackout');
@@ -45,6 +49,7 @@ const graphicsSettings = {
     bloomIntensity: 0.9,
     bloomRadius: 1.0,
     bloomThreshold: 0.7,
+    waterAnimationSpeed: 1.0,
     starCount: 2000,
     waterColor: '#34506C'
 };
@@ -110,6 +115,7 @@ function createGraphicsGui() {
     });
 
     const waterFolder = graphicsGui.addFolder('Water');
+    waterFolder.add(graphicsSettings, 'waterAnimationSpeed', 0.0, 2.5, 0.01).name('Wave speed');
     waterFolder.addColor(graphicsSettings, 'waterColor').name('Water color').onChange((value) => {
         graphicsSettings.waterColor = value;
         if (water && water.material && water.material.uniforms && water.material.uniforms.waterColor) {
@@ -131,29 +137,63 @@ window.setGameMode = function (isStoryMode) {
     }
 };
 
+function ensureStoryAudio() {
+    if (seaAudio || songAudio) return;
+
+    seaAudio = new Audio('./assets/audio/seawaves.mp3');
+    seaAudio.loop = true;
+    seaAudio.preload = 'auto';
+    seaAudio.volume = 0.28;
+
+    songAudio = new Audio('./assets/audio/secondsun-bonobo.mp3');
+    songAudio.loop = false;
+    songAudio.preload = 'auto';
+    songAudio.volume = 0.4;
+}
+
+function pauseStoryAudio() {
+    if (seaAudio) seaAudio.pause();
+    if (songAudio) songAudio.pause();
+}
+
+function startStoryAudio() {
+    ensureStoryAudio();
+    if (!storyAudioEnabled || !seaAudio || !songAudio) return;
+
+    if (!storyAudioStarted) {
+        storyAudioStarted = true;
+        songAudio.currentTime = 0;
+        songAudio.volume = 0.4;
+        songAudio.play().catch(() => {});
+    }
+}
+
+function startSeaLoopAfterSplash() {
+    ensureStoryAudio();
+    if (!storyAudioEnabled || !seaAudio) return;
+
+    if (seaAudio.paused) {
+        seaAudio.currentTime = 0;
+        seaAudio.play().catch(() => {});
+    }
+}
+
 window.toggleMusic = function () {
-    const AudioCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtor) return false;
-
-    if (!audioContext) {
-        audioContext = new AudioCtor();
-        musicGainNode = audioContext.createGain();
-        musicGainNode.gain.value = 0.0;
-        musicGainNode.connect(audioContext.destination);
-    }
-
-    if (audioContext.state === 'suspended') {
-        audioContext.resume();
-    }
-
     const button = document.getElementById('music-toggle');
     if (button) {
         const isOn = !button.dataset.musicOn || button.dataset.musicOn === 'false';
         button.dataset.musicOn = String(isOn);
         button.textContent = isOn ? 'Music: On' : 'Music: Off';
+        storyAudioEnabled = isOn;
 
-        if (musicGainNode) {
-            musicGainNode.gain.value = 0.0; // MUSIC MUTED
+        if (!isOn) {
+            pauseStoryAudio();
+            return false;
+        }
+
+        ensureStoryAudio();
+        if (appStarted && STORY_MODE && !storyAudioStarted) {
+            startStoryAudio();
         }
     }
 
@@ -171,14 +211,18 @@ window.startGame = function (isStoryMode) {
         animate();
     }
 
-    if (controls) {
-        controls.enabled = !STORY_MODE;
-    }
-
     if (STORY_MODE) {
+        if (storyAudioEnabled) {
+            startStoryAudio();
+        }
         destroyGraphicsGui();
     } else {
+        pauseStoryAudio();
         createGraphicsGui();
+    }
+
+    if (controls) {
+        controls.enabled = !STORY_MODE;
     }
 };
 
@@ -214,17 +258,14 @@ if (document.readyState === 'loading') {
 }
 
 function init() {
-
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1f1c38);
     scene.environment = scene.background;
     scene.fog = new THREE.Fog(0x1f1c38, 10, 100);
 
-    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 1000);
-    if (!STORY_MODE) camera.position.set(20, 15, 30); 
+    camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 1000);
+    if (!STORY_MODE) camera.position.set(20, 15, 30);
 
-    /* ---------------------------------------------- */
-    
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio, 1.5);
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -261,8 +302,6 @@ function init() {
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.enabled = !STORY_MODE;
-
-    /* ---------------------------------------------- */
 
     scene.add(new THREE.AmbientLight(0xfcf6ca, 1));
 
@@ -355,7 +394,7 @@ function animate() {
     }
 
     if (water && water.material) {
-        water.material.uniforms['time'].value += 0.004;
+        water.material.uniforms['time'].value += 0.004 * graphicsSettings.waterAnimationSpeed;
     }
 
     applyGraphicsSettings();
@@ -378,6 +417,10 @@ function animate() {
     if (STORY_MODE) {
         const currentState = updateStarLogic(camera, mixerClock, delta);
         storyNarrator.updateCutsceneState(currentState, delta);
+
+        if (currentState === 'ON_WATER' && storyAudioEnabled) {
+            startSeaLoopAfterSplash();
+        }
 
         if (currentState === 'INTERACTIVE' && !isWindowFocusActive()) controls.enabled = true;
         if (isWindowFocusActive()) controls.enabled = false;

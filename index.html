@@ -95,6 +95,14 @@
     </div>
 
     <script type="module" src="main.js"></script>
+    <div id="vignette-overlay" style="
+        position: fixed;
+        inset: 0;
+        background: radial-gradient(circle at center, rgba(0,0,0,0) 46%, rgba(0,0,0,0.72) 100%);
+        opacity: 0.45;
+        pointer-events: none;
+        z-index: 15;
+    "></div>
     <div id="story-blackout" style="
         position: fixed;
         inset: 0;
