@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prova</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+        body { 
+            margin: 0; 
+            overflow: hidden; /* Nasconde le barre di scorrimento */
+            background-color: #000;
+        }
+        canvas { 
+            display: block; 
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/",
+                "@three.ez/instanced-mesh": "https://cdn.jsdelivr.net/npm/@three.ez/instanced-mesh/build/index.js",
+                "bvh.js": "https://cdn.jsdelivr.net/npm/bvh.js/build/index.js"
+            }
+        }
+    </script>
+</head>
+<body>
+    <script type="module" src="main.js"></script>
+    <div id="story-blackout" style="
+        position: fixed;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+        pointer-events: none;
+        z-index: 9;
+    "></div>
+    <div id="narrative-text" style="
+        position: absolute; 
+        bottom: 10%; 
+        left: 10%; 
+        right: 10%;
+        color: white; 
+
+        font-family: 'VT323', monospace; 
+        font-size: 34px;
+        font-style: bold;
+
+        pointer-events: none; /* Impedisce al testo di bloccare i clic del mouse sul 3D */
+        z-index: 10;
+        text-align: center;
+    "></div>
+</body>
+</html>

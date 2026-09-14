@@ -1,0 +1,212 @@
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+import { createStarrySky } from './stars.js';
+import { initLittleStar, updateStarLogic, isWindowFocusActive } from './littlestar.js';
+import { createWater } from './water.js';
+import { setupWindows, updateWindows, handleWindowClick, isPointerOverCurrentWindow, cancelWindowFocus } from './windows.js';
+import { createNarrativeManager } from './story.js';
+
+/* ----------------------------------------------- */
+
+let camera, scene, renderer, controls, composer, mixer;
+let water, model, moon, waterNormalMap, starrySky;
+let windowsController;
+
+const STORY_MODE = true;
+
+
+const narrativeElement = document.getElementById('narrative-text');
+const blackoutElement = document.getElementById('story-blackout');
+const storyNarrator = createNarrativeManager(narrativeElement, blackoutElement);
+
+const WINDOW_SEQUENCE = [
+    'window-1',
+    'window-2',
+    'window-3-front',
+    'window-4-clothes',
+    'window-5-fan', 
+];
+
+let clock = new THREE.Clock();
+let mixerClock = new THREE.Clock();
+
+init();
+animate(); 
+
+function init() {
+    
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1f1c38); // 0x050810
+    scene.environment = scene.background;
+    scene.fog = new THREE.Fog(0x1f1c38, 10, 100); 
+
+    camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 1000);
+    if (!STORY_MODE) camera.position.set(20, 15, 30); 
+
+    /* ---------------------------------------------- */
+    
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio, 1.5);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
+
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+
+    const renderTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
+        type: THREE.HalfFloatType,
+        format: THREE.RGBAFormat,
+    });
+    
+    composer = new EffectComposer(renderer, renderTarget);
+    composer.setPixelRatio(window.devicePixelRatio);
+
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    const bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2),
+        0.9, // intensity
+        1, // radius
+        0.7 // threshold
+    );
+    composer.addPass(bloomPass);
+    const outputPass = new OutputPass();
+    composer.addPass(outputPass);
+
+    /* ---------------------------------------------- */
+
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.enabled = !STORY_MODE;
+
+    /* ---------------------------------------------- */
+
+    scene.add(new THREE.AmbientLight(0xfcf6ca, 1));
+
+    moon = new THREE.DirectionalLight(0x88bbff, 0.5);
+    moon.position.set(10, 40, -10);
+    scene.add(moon);
+
+    /* ---------------------------------------------- */
+
+    if (STORY_MODE) initLittleStar(scene);
+
+    starrySky = createStarrySky();
+    scene.add(starrySky);
+
+    water = createWater(moon, scene.fog !== undefined);
+    scene.add(water);
+
+    /* ---------------------------------------------- */
+
+    const loader = new GLTFLoader();
+    loader.load('/assets/finalbuilding.gltf', function (gltf) {
+        model = gltf.scene;
+
+        model.traverse((child) => {
+
+            // if (child.isMesh) console.log(child.material.name);
+
+            if (child.isMesh && child.material.name.includes("Street") && child.material.name.includes("Emission")) {
+
+                child.material = child.material.clone();
+                child.material.emissive = new THREE.Color(0xffaa00);
+                child.material.emissiveIntensity = 2.0;
+            }
+        });
+        scene.add(model);
+
+        windowsController = setupWindows(model, scene, WINDOW_SEQUENCE);
+        windowsController.onWindowFramed = storyNarrator.playWindowVignette;
+        windowsController.onWindowFocusCleared = storyNarrator.clear;
+
+        if (gltf.animations && gltf.animations.length > 0) {
+            mixer = new THREE.AnimationMixer(model);
+            gltf.animations.forEach((clip) => {
+                mixer.clipAction(clip).play();
+            });
+        }
+
+    }, undefined, function (error) {
+        console.error(error);
+    });
+
+    /* ---------------------------------------------- */
+
+    renderer.domElement.addEventListener('click', (event) => {
+        if (!STORY_MODE || !windowsController) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        if (isWindowFocusActive()) {
+            if (!isPointerOverCurrentWindow(windowsController, camera, ndcX, ndcY)) {
+                cancelWindowFocus(windowsController);
+            }
+            return;
+        }
+
+        handleWindowClick(windowsController, camera, ndcX, ndcY);
+    });
+ 
+
+
+    window.addEventListener('resize', onWindowResize);
+
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+}
+
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    const t = clock.getElapsedTime();
+    const delta = mixerClock.getDelta();
+
+    if (mixer) {
+        mixer.update(delta);
+    }
+
+    if (water && water.material) {
+        water.material.uniforms['time'].value += 0.004;
+    }
+
+    if (starrySky) {
+        starrySky.rotation.y -= 0.0003;
+        starrySky.material.uniforms.uTime.value = t;
+    }
+
+    if (STORY_MODE && windowsController) {
+        updateWindows(windowsController, delta, camera, controls);
+    }
+
+    if (STORY_MODE) {
+        const currentState = updateStarLogic(camera, mixerClock, delta);
+        storyNarrator.updateCutsceneState(currentState, delta);
+
+        if (currentState === 'INTERACTIVE' && !isWindowFocusActive()) controls.enabled = true;
+        if (isWindowFocusActive()) controls.enabled = false;
+        if (controls.enabled) controls.update();
+    }
+    else {
+        controls.enabled = true;
+        controls.update();
+    }
+
+    composer.render();
+}
