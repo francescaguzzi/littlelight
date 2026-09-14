@@ -5,7 +5,7 @@ import { Water } from 'three/addons/objects/Water.js';
 export function createWater(light, hasFog) {
 
     const waterNormalMap = new THREE.TextureLoader().load(
-        '/assets/waternormals.jpg',
+        './assets/waternormals.jpg',
         function (texture) {
             texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
             waterNormalMap.repeat.set(20, 20);

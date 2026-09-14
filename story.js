@@ -39,7 +39,7 @@ export const WINDOW_VIGNETTE_TEXTS = {
     ]
 
 };
-export const DROP_SOUND_SRC = '/assets/audio/splash.mp3';
+export const DROP_SOUND_SRC = './assets/audio/splash.mp3';
 
 function normalizeSequence(sequenceDefinition, defaultHold) {
 	if (!sequenceDefinition) return [];

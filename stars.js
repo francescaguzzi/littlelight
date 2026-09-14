@@ -24,7 +24,7 @@ export function createStarrySky(starsCount = 2000) {
     );
 
     const textureLoader = new THREE.TextureLoader();
-    const starTexture = textureLoader.load('/assets/stella.png');
+    const starTexture = textureLoader.load('./assets/stella.png');
     
     const starMaterial = new THREE.ShaderMaterial({
         uniforms: {
