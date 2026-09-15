@@ -8,9 +8,23 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { createStarrySky, updateStarrySkyVisibility } from './stars.js';
-import { initLittleStar, updateStarLogic, isWindowFocusActive } from './littlestar.js';
+import {
+    initLittleStar,
+    updateStarLogic,
+    isWindowFocusActive,
+    triggerStarFlash,
+    setStarStoryBrightness,
+} from './littlestar.js';
 import { createWater } from './water.js';
-import { setupWindows, updateWindows, handleWindowClick, isPointerOverCurrentWindow, cancelWindowFocus } from './windows.js';
+import {
+    setupWindows,
+    updateWindows,
+    handleWindowClick,
+    isPointerOverCurrentWindow,
+    cancelWindowFocus,
+    startInteractiveWindowSequence,
+    triggerCurrentWindowReveal,
+} from './windows.js';
 import { createNarrativeManager } from './story.js';
 
 /* ----------------------------------------------- */
@@ -339,9 +353,25 @@ function init() {
         });
         scene.add(model);
 
-        windowsController = setupWindows(model, scene, WINDOW_SEQUENCE);
+        windowsController = setupWindows(model, scene, WINDOW_SEQUENCE, camera);
         windowsController.onWindowFramed = storyNarrator.playWindowVignette;
         windowsController.onWindowFocusCleared = storyNarrator.clear;
+        storyNarrator.setOnVignetteComplete((windowName) => {
+            if (windowsController) {
+                setStarStoryBrightness(0.15);
+                windowsController.finishWindowSequenceStep(windowName);
+            }
+        });
+        storyNarrator.setRevealHandler((items) => {
+            if (windowsController) {
+                triggerCurrentWindowReveal(windowsController, items);
+            }
+        });
+        storyNarrator.setFlashHandler(() => {
+            if (windowsController) { // && windowsController.currentIndex >= 0) {
+                triggerStarFlash();
+            }
+        });
 
         if (gltf.animations && gltf.animations.length > 0) {
             mixer = new THREE.AnimationMixer(model);
@@ -370,6 +400,12 @@ function init() {
         }
 
         handleWindowClick(windowsController, camera, ndcX, ndcY);
+    });
+
+    window.addEventListener('keydown', (event) => {
+        if (event.code !== 'Space') return;
+        if (!STORY_MODE) return;
+        storyNarrator.triggerFlash();
     });
 
     window.addEventListener('resize', onWindowResize);
@@ -417,6 +453,10 @@ function animate() {
     if (STORY_MODE) {
         const currentState = updateStarLogic(camera, mixerClock, delta);
         storyNarrator.updateCutsceneState(currentState, delta);
+
+        if (currentState === 'INTERACTIVE' && windowsController && !windowsController.sequenceStarted) {
+            startInteractiveWindowSequence(windowsController);
+        }
 
         if (currentState === 'ON_WATER' && storyAudioEnabled) {
             startSeaLoopAfterSplash();
