@@ -15,7 +15,7 @@ import {
     triggerStarFlash,
     setStarStoryBrightness,
 } from './littlestar.js';
-import { createWater } from './water.js';
+import { createWater, addWaterGui } from './water.js';
 import {
     setupWindows,
     updateWindows,
@@ -84,10 +84,6 @@ function applyGraphicsSettings() {
             bloomPass.threshold = graphicsSettings.bloomThreshold;
         }
     }
-
-    if (water && water.material && water.material.uniforms && water.material.uniforms.waterColor) {
-        water.material.uniforms.waterColor.value.set(graphicsSettings.waterColor);
-    }
 }
 
 function updateStarCount(newCount) {
@@ -128,14 +124,7 @@ function createGraphicsGui() {
         updateStarCount(value);
     });
 
-    const waterFolder = graphicsGui.addFolder('Water');
-    waterFolder.add(graphicsSettings, 'waterAnimationSpeed', 0.0, 2.5, 0.01).name('Wave speed');
-    waterFolder.addColor(graphicsSettings, 'waterColor').name('Water color').onChange((value) => {
-        graphicsSettings.waterColor = value;
-        if (water && water.material && water.material.uniforms && water.material.uniforms.waterColor) {
-            water.material.uniforms.waterColor.value.set(value);
-        }
-    });
+    if (water) addWaterGui(graphicsGui, water);
 }
 
 window.setGameMode = function (isStoryMode) {
@@ -159,8 +148,8 @@ function ensureStoryAudio() {
     seaAudio.preload = 'auto';
     seaAudio.volume = 0.28;
 
-    songAudio = new Audio('./assets/audio/secondsun-bonobo.mp3');
-    songAudio.loop = false;
+    songAudio = new Audio('./assets/audio/risesthemoon.mp3');
+    songAudio.loop = true;
     songAudio.preload = 'auto';
     songAudio.volume = 0.4;
 }
@@ -320,7 +309,7 @@ function init() {
     scene.add(new THREE.AmbientLight(0xfcf6ca, 1));
 
     moon = new THREE.DirectionalLight(0x88bbff, 0.5);
-    moon.position.set(10, 40, -10);
+    moon.position.set(10, 80, -10);
     scene.add(moon);
 
     /* ---------------------------------------------- */
@@ -331,7 +320,6 @@ function init() {
     scene.add(starrySky);
 
     water = createWater(moon, scene.fog !== undefined);
-    water.material.uniforms.waterColor.value.set(graphicsSettings.waterColor);
     scene.add(water);
 
     /* ---------------------------------------------- */
@@ -342,8 +330,6 @@ function init() {
 
         model.traverse((child) => {
 
-            // if (child.isMesh) console.log(child.material.name);
-
             if (child.isMesh && child.material.name.includes("Street") && child.material.name.includes("Emission")) {
 
                 child.material = child.material.clone();
@@ -352,6 +338,69 @@ function init() {
             }
         });
         scene.add(model);
+
+        // DEBUG
+
+        // const textures = new Map();
+        // model.traverse((object) => {
+
+        //     if (!object.isMesh) return;
+
+        //     const materials = Array.isArray(object.material)
+        //         ? object.material
+        //         : [object.material];
+
+        //     materials.forEach((material) => {
+
+        //         for (const key in material) {
+
+        //             const texture = material[key];
+
+        //             if (!texture || !texture.isTexture) continue;
+
+        //             const image = texture.image;
+
+        //             if (!image) continue;
+
+        //             const width = image.width || image.videoWidth;
+        //             const height = image.height || image.videoHeight;
+
+        //             const keyImage =
+        //                 `${width}x${height}_${texture.name}`;
+
+        //             if (!textures.has(keyImage)) {
+        //                 textures.set(keyImage, {
+        //                     name: texture.name,
+        //                     width,
+        //                     height,
+        //                     count: 0
+        //                 });
+        //             }
+
+        //             textures.get(keyImage).count++;
+        //         }
+        //     });
+        // });
+
+        // console.table(
+        //     [...textures.values()]
+        //         .sort((a, b) =>
+        //             (b.width * b.height) -
+        //             (a.width * a.height)
+        //         )
+        // );
+
+        // let total = 0;
+
+        // for (const tex of textures.values()) {
+        //     total += tex.width * tex.height * 4;
+        // }
+
+        // console.log(
+        //     "Texture uniche stimate:",
+        //     `${(total / 1024 / 1024).toFixed(1)} MB`
+        // );
+
 
         windowsController = setupWindows(model, scene, WINDOW_SEQUENCE, camera);
         windowsController.onWindowFramed = storyNarrator.playWindowVignette;
@@ -409,6 +458,8 @@ function init() {
     });
 
     window.addEventListener('resize', onWindowResize);
+
+
 }
 
 function onWindowResize() {
@@ -429,9 +480,9 @@ function animate() {
         mixer.update(delta);
     }
 
-    if (water && water.material) {
-        water.material.uniforms['time'].value += 0.004 * graphicsSettings.waterAnimationSpeed;
-    }
+    // if (water && water.material) {
+    //     water.material.uniforms['time'].value += 0.004 * graphicsSettings.waterAnimationSpeed;
+    // }
 
     applyGraphicsSettings();
 
