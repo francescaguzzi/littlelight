@@ -1,8 +1,6 @@
 import * as THREE from "three";
-import {
-    setWindowFocusTarget,
-    restoreInteractiveFromWindowFocus,
-} from './littlestar.js';
+import { setWindowFocusTarget, restoreInteractiveFromWindowFocus } from './littlestar.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 
 /* ---------------------------------------------- */
 
@@ -69,16 +67,38 @@ function computeWindowFocusTarget(mesh, modelCenter) {
     return { worldCenter, focusDirection, targetPos };
 }
 
+/**
+ * RectAreaLight dietro la finestra, orientata verso l'esterno dell'edificio:
+ * emette attraverso il vetro nella direzione del target di `lookAt`
+ * (per le Light .lookAt() allinea -Z verso il punto). Intensità da 0
+ * (fade-in all'attivazione della finestra).
+ */
 function makeBacklight(windowMesh, color, outward, center) {
     const size = new THREE.Box3().setFromObject(windowMesh).getSize(new THREE.Vector3());
+    const width = Math.max((size.x || size.z) + BACKLIGHT_INSET, 0.1);
+    const height = Math.max(size.y + BACKLIGHT_INSET, 0.1);
 
-    const backlight = new THREE.Mesh(
-        new THREE.PlaneGeometry(size.x || size.z, size.y),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0 })
-    );
-    // Posizionato poco dentro la finestra (verso il centro edificio), mai fuori.
+    const backlight = new THREE.RectAreaLight(color, 0, width, height);
+    // Posizionata poco dentro la finestra (verso il centro edificio), mai fuori.
     backlight.position.copy(center).addScaledVector(outward, -BACKLIGHT_INSET);
     backlight.lookAt(center.clone().add(outward));
+
+    // Plane luminoso coincidente con la RectAreaLight. MeshBasicMaterial è
+    // unlit: non esistono proprietà emissive
+    const geometry = new THREE.PlaneGeometry(width, height);
+    const material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+    });
+    const glowMesh = new THREE.Mesh(geometry, material);
+
+    glowMesh.position.copy(backlight.position);
+    glowMesh.quaternion.copy(backlight.quaternion);
+    backlight.userData.glowMesh = glowMesh;
+
     return backlight;
 }
 
@@ -89,8 +109,15 @@ function disposeBacklight(windowEntry) {
     if (backlight.parent) {
         backlight.parent.remove(backlight);
     }
-    backlight.geometry.dispose();
-    backlight.material.dispose();
+    // Anche il glow plane associato: fuori dalla scena e disposato.
+    const glow = backlight.userData.glowMesh;
+    if (glow) {
+        if (glow.parent) {
+            glow.parent.remove(glow);
+        }
+        glow.geometry.dispose();
+        glow.material.dispose();
+    }
 }
 
 function activateAt(controller, index) {
@@ -101,7 +128,7 @@ function activateAt(controller, index) {
     entry.state = WINDOW_STATES.ACTIVE;
     entry.revealed = false;
     entry.targetOpacity = 0.5;
-    entry.backlightTargetOpacity = Math.min(entry.backlightIntensity, 1); // fade-in dal 0
+    entry.backlightTargetIntensity = entry.backlightIntensity; // fade-in dal 0
     entry.material.opacity = 0.5;
 }
 
@@ -119,6 +146,7 @@ export function setupWindows(model, scene, windowDefs, camera) {
     // e non è ancora passato un render, le matrixWorld sono ancora quelle di
     // default e getWorldPosition() più sotto restituirebbe coordinate sbagliate.
     model.updateMatrixWorld(true);
+    RectAreaLightUniformsLib.init();
 
     // Centro dell'edificio: riferimento per il lato outward di ogni finestra.
     const modelCenter = new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3());
@@ -158,6 +186,7 @@ export function setupWindows(model, scene, windowDefs, camera) {
             const { center, outward } = getOutward(mesh, modelCenter);
             const backlight = makeBacklight(mesh, cfg.color, outward, center);
             scene.add(backlight);
+            scene.add(backlight.userData.glowMesh);
 
             return {
                 id: def.id,
@@ -167,7 +196,8 @@ export function setupWindows(model, scene, windowDefs, camera) {
                 material: mesh.material,
                 backlight,
                 backlightIntensity: cfg.intensity ?? 1,
-                backlightTargetOpacity: 0,
+                backlightTargetIntensity: 0,
+                glowOpacity: 0, // alpha del glow plane (lerp, mai NaN)
                 targetOpacity: 1,
                 state: WINDOW_STATES.IDLE,
                 revealed: false,
@@ -218,7 +248,7 @@ export function setupWindows(model, scene, windowDefs, camera) {
         activeWindow.state = WINDOW_STATES.CLOSING;
         activeWindow.revealed = true;
         activeWindow.targetOpacity = 1;
-        activeWindow.backlightTargetOpacity = 0;
+        activeWindow.backlightTargetIntensity = 0;
     };
 
     revealNames.forEach((name) => {
@@ -318,7 +348,21 @@ export function updateWindows(controller, delta, camera, controls) {
         w.material.opacity += (w.targetOpacity - w.material.opacity) * FADE_SPEED;
 
         if (w.backlight) {
-            w.backlight.material.opacity += (w.backlightTargetOpacity - w.backlight.material.opacity) * FADE_SPEED;
+            w.backlight.intensity += (w.backlightTargetIntensity - w.backlight.intensity) * FADE_SPEED;
+
+            // Fade del glow plane con lo stesso lerp, MA senza divisioni:
+            // `intensity / target = Infinity|NaN` su finestre idle o in
+            // chiusura (target 0) corrompeva alpha e faceva lo schermo nero.
+            const glow = w.backlight.userData.glowMesh;
+            if (glow) {
+                const glowTarget = w.backlightTargetIntensity > 0 ? 1 : 0;
+                const current = w.glowOpacity ?? 0;
+                w.glowOpacity = THREE.MathUtils.clamp(
+                    current + (glowTarget - current) * FADE_SPEED,
+                    0, 1
+                );
+                glow.material.opacity = w.glowOpacity;
+            }
         }
     }
 
@@ -340,8 +384,8 @@ export function updateWindows(controller, delta, camera, controls) {
         // La finestra torna a piena opacità; si spegne solo il backlight.
         active.targetOpacity = 1;
 
-        // Fade-out completo del backlight, poi rimozione + dispose.
-        if (!active.backlight || active.backlight.material.opacity < 0.02) {
+        // Fade-out completo del backlight, poi rimozione.
+        if (!active.backlight || active.backlight.intensity < 0.02) {
             disposeBacklight(active);
             active.state = WINDOW_STATES.COMPLETED;
             controller.pendingWindowActivation = true;

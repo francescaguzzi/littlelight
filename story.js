@@ -17,7 +17,7 @@ export const STORY = {
         {
             id: 'window-1',
             activationDelay: [2, 8],
-            backlight: { color: 0xffaa55, intensity: 1.0 },
+            backlight: { color: 0xffaa55, intensity: 12.0 },
             steps: [
                 { type: 'text', text: 'The little star was fascinated by the world of humans.', hold: 1.0 },
                 { type: 'text', text: 'She saw them from afar, and she wanted to be part of their lives.', hold: 1.0 },

@@ -8,21 +8,10 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { createStarrySky, updateStarrySkyVisibility } from './stars.js';
-import {
-    initLittleStar,
-    updateStarLogic,
-    isWindowFocusActive,
-    triggerStarFlash,
-    setStarStoryBrightness,
+import { initLittleStar, updateStarLogic, isWindowFocusActive, triggerStarFlash, setStarStoryBrightness,
 } from './littlestar.js';
 import { createWater, addWaterGui } from './water.js';
-import {
-    setupWindows,
-    updateWindows,
-    handleWindowClick,
-    cancelWindowFocus,
-    startInteractiveWindowSequence,
-    triggerCurrentWindowReveal,
+import { setupWindows, updateWindows, handleWindowClick, cancelWindowFocus, startInteractiveWindowSequence, triggerCurrentWindowReveal,
 } from './windows.js';
 import { createNarrativeManager } from './cutscene.js';
 import { STORY } from './story.js';
