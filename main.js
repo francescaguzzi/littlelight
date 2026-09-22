@@ -20,7 +20,6 @@ import {
     setupWindows,
     updateWindows,
     handleWindowClick,
-    isPointerOverCurrentWindow,
     cancelWindowFocus,
     startInteractiveWindowSequence,
     triggerCurrentWindowReveal,
@@ -418,14 +417,17 @@ function init() {
         const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-        if (isWindowFocusActive()) {
-            if (!isPointerOverCurrentWindow(windowsController, camera, ndcX, ndcY)) {
-                cancelWindowFocus(windowsController);
-            }
-            return;
-        }
+        // Prima prova ad inquadrare la finestra attiva: funziona anche con un
+        // focus precedente ancora attivo su una finestra completata (il click
+        // sulla finestra nuova la rifocalizza).
+        if (handleWindowClick(windowsController, camera, ndcX, ndcY)) return;
 
-        handleWindowClick(windowsController, camera, ndcX, ndcY);
+        // Qualsiasi altro click mentre un focus è attivo lo annulla: la camera
+        // resta inquadrata sulla finestra finché l'utente non clicca un punto
+        // diverso dello schermo.
+        if (isWindowFocusActive()) {
+            cancelWindowFocus(windowsController);
+        }
     });
 
     window.addEventListener('keydown', (event) => {

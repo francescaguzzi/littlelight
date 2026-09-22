@@ -10,6 +10,7 @@ const FADE_SPEED = 0.05;
 const FOCUS_DISTANCE = 5;
 const STAR_FOCUS_DISTANCE = 1.6;
 const CAMERA_LERP_SPEED = 2;
+const BACKLIGHT_INSET = 0.5; // distanza dal vetro, verso l'interno dell'edificio
 
 const DEFAULT_WINDOW_EMISSIVE = { color: 0xffaa55, intensity: 3.0 };
 
@@ -43,29 +44,41 @@ function getWorldNormal(mesh) {
     return local.transformDirection(mesh.matrixWorld).normalize();
 }
 
+/**
+ * Direzione "fuori" affidabile per una finestra. L'asse sottile del vetro
+ * (getWorldNormal) ha segno arbitrario nel modello, quindi si usa il centro
+ * dell'edificio come riferimento: la direzione verso l'esterno è quella che si
+ * allontana dal centro del building. Coerente per backlight, inquadratura
+ * camera e posizionamento stella (niente più plane fuori o camera interna).
+ */
+function getOutward(mesh, modelCenter) {
+    const center = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
+    const normal = getWorldNormal(mesh);
+    const sign = Math.sign(center.clone().sub(modelCenter).dot(normal)) || 1;
+    const outward = normal.clone().multiplyScalar(sign);
+    return { center, normal, outward };
+}
+
 // Stessa identica formula usata da handleWindowClick per calcolare dove si
 // sposterà la camera al click su questa finestra. Centralizzata qui così i due
 // calcoli non possono disallinearsi in futuro.
-function computeWindowFocusTarget(mesh, camera) {
-    const worldCenter = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
-    const normal = getWorldNormal(mesh);
-    const sideSign = Math.sign(camera.position.clone().sub(worldCenter).dot(normal)) || 1;
-    const focusDirection = normal.clone().multiplyScalar(sideSign);
-    const targetPos = worldCenter.clone().add(focusDirection.clone().multiplyScalar(FOCUS_DISTANCE));
+function computeWindowFocusTarget(mesh, modelCenter) {
+    const { center: worldCenter, outward } = getOutward(mesh, modelCenter);
+    const focusDirection = outward.clone();
+    const targetPos = worldCenter.clone().add(outward.clone().multiplyScalar(FOCUS_DISTANCE));
     return { worldCenter, focusDirection, targetPos };
 }
 
-function makeBacklight(windowMesh, color) {
-    const normal = getWorldNormal(windowMesh);
-    const center = new THREE.Box3().setFromObject(windowMesh).getCenter(new THREE.Vector3());
+function makeBacklight(windowMesh, color, outward, center) {
     const size = new THREE.Box3().setFromObject(windowMesh).getSize(new THREE.Vector3());
 
     const backlight = new THREE.Mesh(
         new THREE.PlaneGeometry(size.x || size.z, size.y),
         new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0 })
     );
-    backlight.position.copy(center).addScaledVector(normal, -5); // un filo dietro, dentro la stanza
-    backlight.lookAt(center.clone().add(normal));
+    // Posizionato poco dentro la finestra (verso il centro edificio), mai fuori.
+    backlight.position.copy(center).addScaledVector(outward, -BACKLIGHT_INSET);
+    backlight.lookAt(center.clone().add(outward));
     return backlight;
 }
 
@@ -107,6 +120,9 @@ export function setupWindows(model, scene, windowDefs, camera) {
     // default e getWorldPosition() più sotto restituirebbe coordinate sbagliate.
     model.updateMatrixWorld(true);
 
+    // Centro dell'edificio: riferimento per il lato outward di ogni finestra.
+    const modelCenter = new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3());
+
     const byName = new Map();
 
     model.traverse((child) => {
@@ -139,13 +155,15 @@ export function setupWindows(model, scene, windowDefs, camera) {
             }
 
             const cfg = def.backlight ?? DEFAULT_WINDOW_EMISSIVE;
-            const backlight = makeBacklight(mesh, cfg.color);
+            const { center, outward } = getOutward(mesh, modelCenter);
+            const backlight = makeBacklight(mesh, cfg.color, outward, center);
             scene.add(backlight);
 
             return {
                 id: def.id,
                 activationDelay: def.activationDelay ?? [2, 8],
                 mesh,
+                outward,
                 material: mesh.material,
                 backlight,
                 backlightIntensity: cfg.intensity ?? 1,
@@ -160,6 +178,7 @@ export function setupWindows(model, scene, windowDefs, camera) {
     const controller = {
         windows,
         byName,
+        modelCenter,
         currentIndex: -1,
         cameraTarget: null,
         raycaster: new THREE.Raycaster(),
@@ -192,12 +211,13 @@ export function setupWindows(model, scene, windowDefs, camera) {
         if (!activeWindow || activeWindow.id !== windowName) return;
         if (activeWindow.state !== WINDOW_STATES.FRAMED) return;
 
-        // Vignetta completata: spegni la finestra e il backlight.
+        // Vignetta completata: spegni il backlight e riporta la finestra a
+        // piena visibilità (opacity 1, vetro nuovamente pienamente opaco).
         // La transizione a COMPLETED (con dispose e scheduling della
         // successiva) avviene in updateWindows quando il fade-out finisce.
         activeWindow.state = WINDOW_STATES.CLOSING;
         activeWindow.revealed = true;
-        activeWindow.targetOpacity = 0;
+        activeWindow.targetOpacity = 1;
         activeWindow.backlightTargetOpacity = 0;
     };
 
@@ -248,7 +268,7 @@ export function handleWindowClick(controller, camera, ndcX, ndcY) {
     if (hits.length > 0) {
         active.state = WINDOW_STATES.FOCUSING;
 
-        const { worldCenter, focusDirection, targetPos } = computeWindowFocusTarget(active.mesh, camera);
+        const { worldCenter, focusDirection, targetPos } = computeWindowFocusTarget(active.mesh, controller.modelCenter);
 
         const worldUp = new THREE.Vector3(0, 1, 0);
         const right = new THREE.Vector3().crossVectors(worldUp, focusDirection).normalize();
@@ -267,19 +287,15 @@ export function handleWindowClick(controller, camera, ndcX, ndcY) {
     return false;
 }
 
-export function isPointerOverCurrentWindow(controller, camera, ndcX, ndcY) {
-    const active = controller.windows[controller.currentIndex];
-    if (!active) return false;
-
-    controller.raycaster.setFromCamera({ x: ndcX, y: ndcY }, camera);
-    return controller.raycaster.intersectObject(active.mesh).length > 0;
-}
-
 export function cancelWindowFocus(controller) {
     const active = controller.windows[controller.currentIndex];
     if (!active) return;
 
-    active.state = WINDOW_STATES.ACTIVE;
+    // Solo una finestra ancora interattiva torna ACTIVE: una finestra già
+    // chiusa/completata non va riattivata da un semplice annullamento.
+    if ([WINDOW_STATES.ACTIVE, WINDOW_STATES.FOCUSING, WINDOW_STATES.FRAMED].includes(active.state)) {
+        active.state = WINDOW_STATES.ACTIVE;
+    }
     controller.cameraTarget = null;
     if (controller.onWindowFocusCleared) {
         controller.onWindowFocusCleared(active.id);
@@ -321,6 +337,9 @@ export function updateWindows(controller, delta, camera, controls) {
             }
         }
     } else if (active.state === WINDOW_STATES.CLOSING) {
+        // La finestra torna a piena opacità; si spegne solo il backlight.
+        active.targetOpacity = 1;
+
         // Fade-out completo del backlight, poi rimozione + dispose.
         if (!active.backlight || active.backlight.material.opacity < 0.02) {
             disposeBacklight(active);
@@ -332,7 +351,9 @@ export function updateWindows(controller, delta, camera, controls) {
                 ? randomBetween(next.activationDelay[0], next.activationDelay[1])
                 : 0;
 
-            restoreInteractiveFromWindowFocus();
+            // Nota: NON ripristinare il focus qui. La camera resta inquadrata
+            // sulla finestra appena completata finché l'utente non clicca su
+            // altro punto (annullamento esplicito in cancelWindowFocus).
         }
     }
 }
