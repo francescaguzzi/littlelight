@@ -2,20 +2,16 @@ import * as THREE from "three";
 import {
     setWindowFocusTarget,
     restoreInteractiveFromWindowFocus,
-    setStarStoryBrightness,
 } from './littlestar.js';
 
 /* ---------------------------------------------- */
 
 const FADE_SPEED = 0.05;
-const LIGHT_MAX_INTENSITY = 10; // usata solo come fallback di default
-const LIGHT_DISTANCE = 6;
-const LIGHT_DECAY = 3;
-const SPOT_ANGLE = Math.PI;   // cono stretto: fascio direzionato, non luce ambiente
-const SPOT_PENUMBRA = 0.5;       // bordo morbido, meno "taglio netto" da cono
 const FOCUS_DISTANCE = 5;
 const STAR_FOCUS_DISTANCE = 1.6;
 const CAMERA_LERP_SPEED = 2;
+
+const DEFAULT_WINDOW_EMISSIVE = { color: 0xffaa55, intensity: 3.0 };
 
 const WINDOW_STATES = {
     IDLE: 'idle',
@@ -25,24 +21,6 @@ const WINDOW_STATES = {
     CLOSING: 'closing',
     COMPLETED: 'completed',
 };
-
-const WINDOW_REVEAL_OBJECTS = {
-    'window-1': ['silhouette', 'sedia2'],
-    'window-2': ['cucina', 'scatola'],
-    'window-3-front': ['street-light'],
-    'window-4-clothes': ['clothes-1', 'clothes-2', 'clothes-3', 'clothes-4', 'clothes-5', 'clothes-6'],
-    'window-5-fan': ['street-light'],
-};
-
-
-const WINDOW_LIGHT_CONFIG = {
-    'window-1': { color: 0xffaa55, intensity: 10 },
-    'window-2': { color: 0x6f8fff, intensity: 7 },
-    'window-3-front': { color: 0xffe0a0, intensity: 12 },
-    'window-4-clothes': { color: 0xaa88ff, intensity: 6 },
-    'window-5-fan': { color: 0xff8866, intensity: 9 },
-};
-const DEFAULT_WINDOW_LIGHT = { color: 0xffaa55, intensity: LIGHT_MAX_INTENSITY };
 
 function randomBetween(min, max) {
     return min + Math.random() * (max - min);
@@ -66,9 +44,8 @@ function getWorldNormal(mesh) {
 }
 
 // Stessa identica formula usata da handleWindowClick per calcolare dove si
-// sposterà la camera al click su questa finestra. Centralizzata qui così la
-// spotlight può puntare esattamente a quel punto, non solo verso qualcosa di
-// simile, e i due calcoli non possono disallinearsi in futuro.
+// sposterà la camera al click su questa finestra. Centralizzata qui così i due
+// calcoli non possono disallinearsi in futuro.
 function computeWindowFocusTarget(mesh, camera) {
     const worldCenter = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
     const normal = getWorldNormal(mesh);
@@ -78,77 +55,53 @@ function computeWindowFocusTarget(mesh, camera) {
     return { worldCenter, focusDirection, targetPos };
 }
 
-function activateAt(controller, idx) {
-    controller.currentIndex = idx;
-    const w = controller.windows[idx];
-    if (!w) return;
+function makeBacklight(windowMesh, color) {
+    const normal = getWorldNormal(windowMesh);
+    const center = new THREE.Box3().setFromObject(windowMesh).getCenter(new THREE.Vector3());
+    const size = new THREE.Box3().setFromObject(windowMesh).getSize(new THREE.Vector3());
 
-    w.state = WINDOW_STATES.ACTIVE;
-    w.targetOpacity = 0.5;
-    w.material.opacity = 0.5;
+    const backlight = new THREE.Mesh(
+        new THREE.PlaneGeometry(size.x || size.z, size.y),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0 })
+    );
+    backlight.position.copy(center).addScaledVector(normal, -5); // un filo dietro, dentro la stanza
+    backlight.lookAt(center.clone().add(normal));
+    return backlight;
+}
 
-    if (w.lightAnchor) {
-        controller.light.position.copy(w.lightAnchor);
+function disposeBacklight(windowEntry) {
+    if (!windowEntry.backlight) return;
+    const backlight = windowEntry.backlight;
+    windowEntry.backlight = null;
+    if (backlight.parent) {
+        backlight.parent.remove(backlight);
     }
-    controller.light.color.set(w.color);
-    controller.light.intensity = w.intensity;
+    backlight.geometry.dispose();
+    backlight.material.dispose();
 }
 
-function advanceToNext(controller) {
-    if (controller.windows.length === 0) return;
-    activateAt(controller, (controller.currentIndex + 1) % controller.windows.length);
-}
+function activateAt(controller, index) {
+    const entry = controller.windows[index];
+    if (!entry) return;
 
-export function startInteractiveWindowSequence(controller) {
-    if (!controller || controller.sequenceStarted || controller.sequenceComplete) return;
-
-    controller.sequenceStarted = true;
-    controller.pendingWindowActivation = true;
-    controller.sequenceDelay = 10;
-    controller.currentIndex = -1;
-}
-
-export function finishWindowSequenceStep(controller, windowName) {
-    if (!controller || typeof controller.finishWindowSequenceStep !== 'function') return;
-    controller.finishWindowSequenceStep(windowName);
-}
-
-export function triggerCurrentWindowReveal(controller, revealNamesOverride) {
-    if (!controller || controller.currentIndex < 0) return;
-
-    const activeWindow = controller.windows[controller.currentIndex];
-    if (!activeWindow || activeWindow.revealed) return;
-
-    activeWindow.revealed = true;
-    const revealNames = revealNamesOverride || WINDOW_REVEAL_OBJECTS[activeWindow.name] || [];
-    revealNames.forEach((name) => {
-        const target = controller.byName.get(name);
-        if (target) {
-            target.visible = true;
-        }
-    });
-
-    const hiddenRevealNames = WINDOW_REVEAL_OBJECTS[activeWindow.name] || [];
-    hiddenRevealNames.forEach((name) => {
-        const target = controller.byName.get(name);
-        if (target) {
-            target.visible = revealNames.includes(name);
-        }
-    });
+    controller.currentIndex = index;
+    entry.state = WINDOW_STATES.ACTIVE;
+    entry.revealed = false;
+    entry.targetOpacity = 0.5;
+    entry.backlightTargetOpacity = Math.min(entry.backlightIntensity, 1); // fade-in dal 0
+    entry.material.opacity = 0.5;
 }
 
 /**
- * Costruisce il controller delle finestre. `sequence` è l'array ORDINATO dei
- * nomi mesh esatti (es. ["window-front", "window-back", "window-right", ...]) —
- * l'ordine qui è l'ordine di attivazione nel gioco, non l'ordine di traverse.
+ * Costruisce il controller delle finestre. `windowDefs` è `STORY.windows`:
+ * array ORDINATO di definizioni { id, activationDelay, backlight, steps } —
+ * l'ordine qui è l'ordine di attivazione delle vignette.
  *
- * Per ogni finestra `scene<N>-light-anchor` (N = indice+1 in sequence) indica
- * dove sta la luce. La direzione del fascio non è più autorabile via empty:
- * punta sempre esattamente al punto in cui si sposterà la camera quando il
- * giocatore clicca sulla finestra (stessa formula di handleWindowClick), per
- * questo `camera` è ora richiesta.
+ * Ogni definizione porta con sé la propria configurazione (delay random
+ * prima dell'attivazione, colore/intensità del backlight, step della vignetta
+ * e oggetti reveal), quindi non serve più alcuna tabella parallela.
  */
-export function setupWindows(model, scene, sequence, camera) {
+export function setupWindows(model, scene, windowDefs, camera) {
     // Fondamentale: se il modello è stato appena caricato/aggiunto alla scena
     // e non è ancora passato un render, le matrixWorld sono ancora quelle di
     // default e getWorldPosition() più sotto restituirebbe coordinate sbagliate.
@@ -157,52 +110,46 @@ export function setupWindows(model, scene, sequence, camera) {
     const byName = new Map();
 
     model.traverse((child) => {
-
-        if (child.isMesh && child.name.includes("window")) {
-            child.material = child.material.clone();
-            child.material.transparent = true;
+        if (child.isMesh) {
             byName.set(child.name, child);
+            if (child.name.includes("window")) {
+                child.material = child.material.clone();
+                child.material.transparent = true;
+            }
         }
-
-        if (child.name.includes("light-anchor")) {
-            byName.set(child.name, child);
-        }
-
     });
 
-    // SpotLight al posto della PointLight: fascio direzionato invece di luce
-    // omnidirezionale, necessario per l'effetto controluce/silhouette.
-    const light = new THREE.SpotLight(0xffaa55, 0, LIGHT_DISTANCE, SPOT_ANGLE, SPOT_PENUMBRA, LIGHT_DECAY);
-    scene.add(light);
-    scene.add(light.target);
+    // Oggetti reveal raccolti dagli step dichiarativi: nascosti all'avvio
+    // (niente lista duplicata: il setup li deriva dagli step).
+    const revealNames = new Set();
+    for (const def of windowDefs) {
+        for (const step of def.steps) {
+            if (step.type === 'reveal' && Array.isArray(step.objects)) {
+                step.objects.forEach((name) => revealNames.add(name));
+            }
+        }
+    }
 
-    const windows = sequence
-        .map((name, index) => {
-            const mesh = byName.get(name);
+    const windows = windowDefs
+        .map((def) => {
+            const mesh = byName.get(def.id);
             if (!mesh) {
-                console.warn(`Finestra "${name}" non trovata nel modello.`);
+                console.warn(`Finestra "${def.id}" non trovata nel modello.`);
                 return null;
             }
-            const lightAnchorName = `scene${index + 1}-light-anchor`;
-            const lightAnchorMesh = byName.get(lightAnchorName);
-            if (!lightAnchorMesh) {
-                console.warn(`Anchor luce "${lightAnchorName}" non trovato nel modello.`);
-            }
-            const lightAnchor = new THREE.Vector3();
-            (lightAnchorMesh ?? mesh).getWorldPosition(lightAnchor);
 
-            const { targetPos: lightTarget } = computeWindowFocusTarget(mesh, camera);
-
-            const cfg = WINDOW_LIGHT_CONFIG[name] ?? DEFAULT_WINDOW_LIGHT;
+            const cfg = def.backlight ?? DEFAULT_WINDOW_EMISSIVE;
+            const backlight = makeBacklight(mesh, cfg.color);
+            scene.add(backlight);
 
             return {
-                name,
+                id: def.id,
+                activationDelay: def.activationDelay ?? [2, 8],
                 mesh,
                 material: mesh.material,
-                lightAnchor,
-                lightTarget,
-                color: cfg.color,
-                intensity: cfg.intensity,
+                backlight,
+                backlightIntensity: cfg.intensity ?? 1,
+                backlightTargetOpacity: 0,
                 targetOpacity: 1,
                 state: WINDOW_STATES.IDLE,
                 revealed: false,
@@ -212,7 +159,6 @@ export function setupWindows(model, scene, sequence, camera) {
 
     const controller = {
         windows,
-        light,
         byName,
         currentIndex: -1,
         cameraTarget: null,
@@ -221,32 +167,72 @@ export function setupWindows(model, scene, sequence, camera) {
         sequenceComplete: false,
         pendingWindowActivation: false,
         sequenceDelay: 0,
+        onWindowFramed: null,
+        onWindowFocusCleared: null,
+        onSequenceComplete: null,
+    };
+
+    controller.activateNext = function () {
+        const nextIndex = this.currentIndex + 1;
+        if (nextIndex >= this.windows.length) {
+            this.sequenceComplete = true;
+            this.pendingWindowActivation = false;
+            if (typeof this.onSequenceComplete === 'function') {
+                this.onSequenceComplete();
+            }
+            return;
+        }
+        activateAt(this, nextIndex);
     };
 
     controller.finishWindowSequenceStep = function (windowName) {
-        if (!this.sequenceStarted) return;
+        if (!this.sequenceStarted || this.sequenceComplete) return;
 
         const activeWindow = this.windows[this.currentIndex];
-        if (!activeWindow || activeWindow.name !== windowName) return;
+        if (!activeWindow || activeWindow.id !== windowName) return;
+        if (activeWindow.state !== WINDOW_STATES.FRAMED) return;
 
+        // Vignetta completata: spegni la finestra e il backlight.
+        // La transizione a COMPLETED (con dispose e scheduling della
+        // successiva) avviene in updateWindows quando il fade-out finisce.
         activeWindow.state = WINDOW_STATES.CLOSING;
         activeWindow.revealed = true;
         activeWindow.targetOpacity = 0;
-        this.pendingWindowActivation = true;
-        this.sequenceDelay = randomBetween(2, 10);
+        activeWindow.backlightTargetOpacity = 0;
     };
 
-    Object.entries(WINDOW_REVEAL_OBJECTS).forEach(([windowName, names]) => {
-        names.forEach((name) => {
-            const mesh = byName.get(name);
-            if (mesh) {
-                mesh.visible = false;
-                mesh.userData.isWindowReveal = true;
-            }
-        });
+    revealNames.forEach((name) => {
+        const mesh = byName.get(name);
+        if (mesh) {
+            mesh.visible = false;
+            mesh.userData.isWindowReveal = true;
+        }
     });
 
     return controller;
+}
+
+export function startInteractiveWindowSequence(controller) {
+    if (!controller || controller.sequenceStarted || controller.sequenceComplete) return;
+
+    controller.sequenceStarted = true;
+    controller.pendingWindowActivation = true;
+    controller.currentIndex = -1;
+
+    const first = controller.windows[0];
+    controller.sequenceDelay = first
+        ? randomBetween(first.activationDelay[0], first.activationDelay[1])
+        : 10;
+}
+
+export function triggerCurrentWindowReveal(controller, revealNames) {
+    if (!controller || !Array.isArray(revealNames)) return;
+    revealNames.forEach((name) => {
+        const target = controller.byName.get(name);
+        if (target) {
+            target.visible = true;
+        }
+    });
 }
 
 // Da chiamare dal listener di click del renderer — ndcX/ndcY in [-1, 1] (coordinate
@@ -296,7 +282,7 @@ export function cancelWindowFocus(controller) {
     active.state = WINDOW_STATES.ACTIVE;
     controller.cameraTarget = null;
     if (controller.onWindowFocusCleared) {
-        controller.onWindowFocusCleared(active.name);
+        controller.onWindowFocusCleared(active.id);
     }
     restoreInteractiveFromWindowFocus();
 }
@@ -304,62 +290,49 @@ export function cancelWindowFocus(controller) {
 export function updateWindows(controller, delta, camera, controls) {
     if (!controller || !controller.windows) return;
 
-    if (controller.sequenceStarted && controller.pendingWindowActivation) {
+    if (controller.sequenceStarted && controller.pendingWindowActivation && !controller.sequenceComplete) {
         controller.sequenceDelay -= delta;
         if (controller.sequenceDelay <= 0) {
             controller.pendingWindowActivation = false;
-
-            if (controller.currentIndex < 0) {
-                if (controller.windows.length > 0) {
-                    activateAt(controller, 0);
-                }
-                return;
-            }
-
-            const active = controller.windows[controller.currentIndex];
-            if (active && active.state === WINDOW_STATES.COMPLETED) {
-                const nextIndex = controller.currentIndex + 1;
-                // if (nextIndex >= controller.windows.length) {
-                //     controller.sequenceStarted = false;
-                //     active.state = WINDOW_STATES.IDLE;
-                //     return;
-                // }
-
-                activateAt(controller, nextIndex);
-            }
+            controller.activateNext();
         }
     }
 
     for (const w of controller.windows) {
         w.material.opacity += (w.targetOpacity - w.material.opacity) * FADE_SPEED;
+
+        if (w.backlight) {
+            w.backlight.material.opacity += (w.backlightTargetOpacity - w.backlight.material.opacity) * FADE_SPEED;
+        }
     }
 
     const active = controller.windows[controller.currentIndex];
     if (!active) return;
 
-    if (active.state === WINDOW_STATES.ACTIVE) {
-        controller.light.intensity = active.intensity;
-    } else if (active.state === WINDOW_STATES.FOCUSING) {
+    if (active.state === WINDOW_STATES.FOCUSING) {
         controls.enabled = false;
         camera.position.lerp(controller.cameraTarget.position, delta * CAMERA_LERP_SPEED);
         controls.target.lerp(controller.cameraTarget.lookAt, delta * CAMERA_LERP_SPEED);
         controls.update();
         if (camera.position.distanceTo(controller.cameraTarget.position) < 0.05) {
             active.state = WINDOW_STATES.FRAMED;
-            if (controller.onWindowFramed) {
-                controller.onWindowFramed(active.name);
+            if (typeof controller.onWindowFramed === 'function') {
+                controller.onWindowFramed(active.id);
             }
         }
     } else if (active.state === WINDOW_STATES.CLOSING) {
-        controller.light.intensity += (0 - controller.light.intensity) * FADE_SPEED;
-        active.targetOpacity = 0;
-        controls.enabled = true;
+        // Fade-out completo del backlight, poi rimozione + dispose.
+        if (!active.backlight || active.backlight.material.opacity < 0.02) {
+            disposeBacklight(active);
+            active.state = WINDOW_STATES.COMPLETED;
+            controller.pendingWindowActivation = true;
 
-        if (active.material.opacity < 0.02) {
-            active.state = WINDOW_STATES.IDLE;
-            active.targetOpacity = 1;
-            active.material.opacity = 0;
-            controller.light.intensity = 0;
+            const next = controller.windows[controller.currentIndex + 1];
+            controller.sequenceDelay = next
+                ? randomBetween(next.activationDelay[0], next.activationDelay[1])
+                : 0;
+
+            restoreInteractiveFromWindowFocus();
         }
     }
 }

@@ -25,7 +25,8 @@ import {
     startInteractiveWindowSequence,
     triggerCurrentWindowReveal,
 } from './windows.js';
-import { createNarrativeManager } from './story.js';
+import { createNarrativeManager } from './cutscene.js';
+import { STORY } from './story.js';
 
 /* ----------------------------------------------- */
 
@@ -44,14 +45,6 @@ let storyAudioStarted = false;
 const narrativeElement = document.getElementById('narrative-text');
 const blackoutElement = document.getElementById('story-blackout');
 const storyNarrator = createNarrativeManager(narrativeElement, blackoutElement);
-
-const WINDOW_SEQUENCE = [
-    'window-1',
-    'window-2',
-    'window-3-front',
-    'window-4-clothes',
-    'window-5-fan',
-];
 
 let clock = new THREE.Clock();
 let mixerClock = new THREE.Clock();
@@ -270,7 +263,7 @@ function init() {
     if (!STORY_MODE) camera.position.set(20, 15, 30);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio, 1.5);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Limit pixel ratio for performance on high-DPI screens
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     document.body.appendChild(renderer.domElement);
@@ -343,31 +336,20 @@ function init() {
 
         // const textures = new Map();
         // model.traverse((object) => {
-
         //     if (!object.isMesh) return;
-
         //     const materials = Array.isArray(object.material)
         //         ? object.material
         //         : [object.material];
-
         //     materials.forEach((material) => {
-
         //         for (const key in material) {
-
         //             const texture = material[key];
-
         //             if (!texture || !texture.isTexture) continue;
-
         //             const image = texture.image;
-
         //             if (!image) continue;
-
         //             const width = image.width || image.videoWidth;
         //             const height = image.height || image.videoHeight;
-
         //             const keyImage =
         //                 `${width}x${height}_${texture.name}`;
-
         //             if (!textures.has(keyImage)) {
         //                 textures.set(keyImage, {
         //                     name: texture.name,
@@ -376,12 +358,10 @@ function init() {
         //                     count: 0
         //                 });
         //             }
-
         //             textures.get(keyImage).count++;
         //         }
         //     });
         // });
-
         // console.table(
         //     [...textures.values()]
         //         .sort((a, b) =>
@@ -389,22 +369,19 @@ function init() {
         //             (a.width * a.height)
         //         )
         // );
-
         // let total = 0;
-
         // for (const tex of textures.values()) {
         //     total += tex.width * tex.height * 4;
         // }
-
         // console.log(
         //     "Texture uniche stimate:",
         //     `${(total / 1024 / 1024).toFixed(1)} MB`
         // );
 
-
-        windowsController = setupWindows(model, scene, WINDOW_SEQUENCE, camera);
+        windowsController = setupWindows(model, scene, STORY.windows, camera);
         windowsController.onWindowFramed = storyNarrator.playWindowVignette;
         windowsController.onWindowFocusCleared = storyNarrator.clear;
+        windowsController.onSequenceComplete = storyNarrator.playEnding;
         storyNarrator.setOnVignetteComplete((windowName) => {
             if (windowsController) {
                 setStarStoryBrightness(0.15);
@@ -479,10 +456,6 @@ function animate() {
     if (mixer) {
         mixer.update(delta);
     }
-
-    // if (water && water.material) {
-    //     water.material.uniforms['time'].value += 0.004 * graphicsSettings.waterAnimationSpeed;
-    // }
 
     applyGraphicsSettings();
 

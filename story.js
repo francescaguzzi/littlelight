@@ -1,357 +1,88 @@
-const DEFAULT_TYPING_SPEED = 100;
-const DEFAULT_LINE_HOLD = 1.0;
+export const STORY = {
+    cutscene: {
+        PANORAMIC_VIEW: [
+            'There was once a little star...',
+            'hers and every other star\'s purpose',
+            'was to make people\'s dreams come true',
+            'but where every other star succeeded...',
+            'she could not make it work',
+        ],
+        CINEMATIC_FALL: ['so she fell'],
+        ON_WATER: ['watched her friends from far below'],
+        RISING: ['and stumbled upon something...'],
+        INTERACTIVE: [],
+    },
 
-const NARRATIVE_TYPES = {
-    CUTSCENE: 'cutscene',
-    VIGNETTE: 'vignette',
-};
+    windows: [
+        {
+            id: 'window-1',
+            activationDelay: [2, 8],
+            backlight: { color: 0xffaa55, intensity: 1.0 },
+            steps: [
+                { type: 'text', text: 'The little star was fascinated by the world of humans.', hold: 1.0 },
+                { type: 'text', text: 'She saw them from afar, and she wanted to be part of their lives.', hold: 1.0 },
+                { type: 'pause', duration: 0.5 },
+                { type: 'flash' },
+                { type: 'reveal', objects: ['silhouette', 'sedia2'] },
+                { type: 'text', text: 'A soft pulse of light made the room finally visible.', hold: 1.2 },
+            ],
+        },
+        {
+            id: 'window-2',
+            activationDelay: [3, 9],
+            backlight: { color: 0x6f8fff, intensity: 2.5 },
+            steps: [
+                { type: 'text', text: 'Behind the glass, a hidden rhythm began to move in the quiet.', hold: 1.0 },
+                { type: 'pause', duration: 0.5 },
+                { type: 'flash' },
+                { type: 'reveal', objects: ['cucina', 'scatola'] },
+                { type: 'text', text: 'The glow revealed a warm and human interior she had never seen before.', hold: 1.2 },
+                { type: 'text', text: 'She felt the first real pull toward the world below.', hold: 1.2 },
+            ],
+        },
+        {
+            id: 'window-3-front',
+            activationDelay: [4, 10],
+            backlight: { color: 0xffe0a0, intensity: 3.5 },
+            steps: [
+                { type: 'text', text: 'From the front she could see the street and the waiting sky.', hold: 1.0 },
+                { type: 'pause', duration: 0.5 },
+                { type: 'flash' },
+                { type: 'reveal', objects: ['street-light'] },
+                { type: 'text', text: 'The flash made the city breathe again in front of her eyes.', hold: 1.2 },
+                { type: 'text', text: 'For a moment, she stopped being only a distant star.', hold: 1.2 },
+            ],
+        },
+        {
+            id: 'window-4-clothes',
+            activationDelay: [4, 10],
+            backlight: { color: 0xaa88ff, intensity: 2.0 },
+            steps: [
+                { type: 'text', text: 'The clothes inside the room drifted into view under the beam of light.', hold: 1.0 },
+                { type: 'pause', duration: 0.5 },
+                { type: 'flash' },
+                { type: 'reveal', objects: ['clothes-1', 'clothes-2', 'clothes-3', 'clothes-4', 'clothes-5', 'clothes-6'] },
+                { type: 'text', text: 'Each fold seemed to hold a memory, a future, a promise.', hold: 1.2 },
+                { type: 'text', text: 'The little star realized she was not just watching life — she was almost inside it.', hold: 1.2 },
+            ],
+        },
+        {
+            id: 'window-5-fan',
+            activationDelay: [5, 12],
+            backlight: { color: 0xff8866, intensity: 3.0 },
+            steps: [
+                { type: 'text', text: 'At last, the room opened fully beneath her light.', hold: 1.0 },
+                { type: 'pause', duration: 0.5 },
+                { type: 'flash' },
+                { type: 'reveal', objects: ['street-light'] },
+                { type: 'text', text: 'The fan, the air, the stillness, all came alive in one bright gesture.', hold: 1.2 },
+                { type: 'text', text: 'She understood that her glow could be a gift, not a burden.', hold: 1.2 },
+            ],
+        },
+    ],
 
-import { WINDOW_VIGNETTES } from './vignette.js';
-
-export const SCENE_DURATIONS = {
-    PANORAMIC_VIEW: 25,
-    CINEMATIC_FALL: 10,
-    ON_WATER: 8,
-    RISING_HOLD: 3.5,
-    RISING_TARGET_Y: 10,
-};
-
-export const NARRATIVE_TIMINGS = {
-    lineHold: DEFAULT_LINE_HOLD,
-    blackout: {
-        fadeIn: 0.14,
-        hold: 2.0,
-        fadeOut: 0.32,
+    // Cutscene conclusiva — contenuto da definire (hook predisposto).
+    ending: {
+        lines: [],
     },
 };
-
-export const INITIAL_CUTSCENE_SCRIPT = {
-    PANORAMIC_VIEW: [
-        'There was once a little star...',
-        'hers and every other star\'s purpose',
-        'was to make people\'s dreams come true',
-        'but where every other star succeeded...',
-        'she could not make it work',
-    ],
-    CINEMATIC_FALL: ['so she fell'],
-    ON_WATER: ['watched her friends from far below'],
-    RISING: ['and stumbled upon something...'],
-    INTERACTIVE: [],
-};
-
-export const DROP_SOUND_SRC = './assets/audio/splash.mp3';
-
-function normalizeSequence(sequenceDefinition, defaultHold) {
-    if (!sequenceDefinition) return [];
-
-    if (Array.isArray(sequenceDefinition)) {
-        return sequenceDefinition
-            .map((entry) => (typeof entry === 'string' ? { text: entry, hold: defaultHold } : entry))
-            .filter((entry) => entry && (entry.text || entry.flash || entry.reveal));
-    }
-
-    if (typeof sequenceDefinition === 'string') {
-        return [{ text: sequenceDefinition, hold: defaultHold }];
-    }
-
-    return [];
-}
-
-function createDropSoundPlayer(src) {
-    if (typeof Audio === 'undefined') return null;
-    const audio = new Audio(src);
-    audio.preload = 'auto';
-    return audio;
-}
-
-export function createNarrativeManager(narrativeElement, blackoutElement = null, {
-    cutsceneScripts = INITIAL_CUTSCENE_SCRIPT,
-    windowVignettes = WINDOW_VIGNETTES,
-    typingSpeed = DEFAULT_TYPING_SPEED,
-    lineHold = DEFAULT_LINE_HOLD,
-    blackout = NARRATIVE_TIMINGS.blackout,
-    dropSoundSrc = DROP_SOUND_SRC,
-} = {}) {
-    let currentState = '';
-    let previousState = '';
-    let activeNarrativeType = null;
-    let activeSequence = [];
-    let currentStepIndex = -1;
-    let currentLineHold = lineHold;
-    let lineHoldElapsed = 0;
-    let isWaitingForLineHold = false;
-    let typingTimerId = null;
-    let transition = null;
-    let activeVignetteName = null;
-    let onVignetteComplete = null;
-    let vignetteRevealHandler = null;
-    let vignetteFlashHandler = null;
-    let isWaitingForFlashInput = false;
-    const dropSound = createDropSoundPlayer(dropSoundSrc);
-
-    function stopTyping() {
-        if (typingTimerId) {
-            clearTimeout(typingTimerId);
-            typingTimerId = null;
-        }
-    }
-
-    function clearText() {
-        stopTyping();
-        if (narrativeElement) {
-            narrativeElement.innerHTML = '';
-        }
-    }
-
-    function setBlackoutOpacity(value) {
-        if (blackoutElement) {
-            blackoutElement.style.opacity = String(value);
-        }
-    }
-
-    function playDropSound() {
-        if (!dropSound) return;
-        dropSound.currentTime = 0;
-        const result = dropSound.play();
-        if (result && typeof result.catch === 'function') {
-            result.catch(() => {});
-        }
-    }
-
-    function typeWriterEffect(text, index, onComplete) {
-        if (!narrativeElement) return;
-
-        if (index === 0) {
-            narrativeElement.innerHTML = '';
-        }
-
-        if (index < text.length) {
-            narrativeElement.innerHTML += text.charAt(index);
-            typingTimerId = setTimeout(() => typeWriterEffect(text, index + 1, onComplete), typingSpeed);
-            return;
-        }
-
-        if (onComplete) {
-            onComplete();
-        }
-    }
-
-    function showText(text, onComplete) {
-        if (!narrativeElement) return;
-        stopTyping();
-        typeWriterEffect(text, 0, onComplete);
-    }
-
-    function startSequence(sequenceDefinition, kind) {
-        activeNarrativeType = kind;
-        activeSequence = normalizeSequence(sequenceDefinition, lineHold);
-        currentStepIndex = 0;
-        lineHoldElapsed = 0;
-        isWaitingForLineHold = false;
-
-        if (activeSequence.length === 0) {
-            clearText();
-            activeNarrativeType = null;
-            return;
-        }
-
-        processSequenceStep();
-    }
-
-    function processSequenceStep() {
-        if (currentStepIndex >= activeSequence.length) {
-            const finishedVignetteName = activeVignetteName;
-            activeSequence = [];
-            activeNarrativeType = null;
-            isWaitingForFlashInput = false;
-            activeVignetteName = null;
-            clearText();
-            if (finishedVignetteName && typeof onVignetteComplete === 'function') {
-                onVignetteComplete(finishedVignetteName);
-            }
-            return;
-        }
-
-        const currentStep = activeSequence[currentStepIndex];
-        currentLineHold = currentStep.hold ?? lineHold;
-        isWaitingForLineHold = false;
-        lineHoldElapsed = 0;
-
-        if (currentStep.flash) {
-            isWaitingForFlashInput = true;
-            return;
-        }
-
-        if (currentStep.reveal) {
-            if (typeof vignetteRevealHandler === 'function') {
-                vignetteRevealHandler(currentStep.reveal);
-            }
-            currentStepIndex += 1;
-            processSequenceStep();
-            return;
-        }
-
-        showText(currentStep.text, () => {
-            isWaitingForLineHold = true;
-            lineHoldElapsed = 0;
-        });
-    }
-
-    function advanceLine() {
-        currentStepIndex += 1;
-        processSequenceStep();
-    }
-
-    function startBlackoutTransition() {
-        transition = {
-            phase: 'fadeIn',
-            elapsed: 0,
-            soundPlayed: false,
-        };
-        clearText();
-        setBlackoutOpacity(0);
-    }
-
-    function updateBlackoutTransition(delta) {
-        if (!transition) return false;
-
-        transition.elapsed += delta;
-
-        if (transition.phase === 'fadeIn') {
-            const progress = Math.min(transition.elapsed / blackout.fadeIn, 1);
-            setBlackoutOpacity(progress);
-            if (progress >= 1) {
-                transition.phase = 'hold';
-                transition.elapsed = 0;
-            }
-            return true;
-        }
-
-        if (transition.phase === 'hold') {
-            setBlackoutOpacity(1);
-            if (!transition.soundPlayed) {
-                playDropSound();
-                transition.soundPlayed = true;
-            }
-            if (transition.elapsed >= blackout.hold) {
-                transition.phase = 'fadeOut';
-                transition.elapsed = 0;
-            }
-            return true;
-        }
-
-        if (transition.phase === 'fadeOut') {
-            const progress = Math.min(transition.elapsed / blackout.fadeOut, 1);
-            setBlackoutOpacity(1 - progress);
-            if (progress >= 1) {
-                transition = null;
-                setBlackoutOpacity(0);
-                startSequence(cutsceneScripts[currentState], 'cutscene');
-            }
-            return true;
-        }
-
-        return false;
-    }
-
-    function updateSequence(delta) {
-        if (!activeSequence.length) return;
-
-        if (isWaitingForLineHold) {
-            lineHoldElapsed += delta;
-            if (lineHoldElapsed >= currentLineHold) {
-                advanceLine();
-            }
-        }
-    }
-
-    function updateCutsceneState(state, delta = 0) {
-        if (state !== currentState) {
-            previousState = currentState;
-            currentState = state;
-            stopTyping();
-            lineHoldElapsed = 0;
-            isWaitingForLineHold = false;
-
-            if (activeNarrativeType === NARRATIVE_TYPES.VIGNETTE) {
-                return;
-            }
-
-            if (currentState === 'ON_WATER' && previousState === 'CINEMATIC_FALL') {
-                startBlackoutTransition();
-                return;
-            }
-
-            startSequence(cutsceneScripts[currentState], NARRATIVE_TYPES.CUTSCENE);
-        }
-
-        if (activeNarrativeType === NARRATIVE_TYPES.VIGNETTE) {
-            updateSequence(delta);
-            return;
-        }
-
-        if (updateBlackoutTransition(delta)) {
-            return;
-        }
-
-        updateSequence(delta);
-    }
-
-    function playWindowVignette(windowName) {
-        const vignette = windowVignettes[windowName];
-        if (!vignette) {
-            clear();
-            return;
-        }
-
-        if (activeVignetteName === windowName && activeNarrativeType === NARRATIVE_TYPES.VIGNETTE) {
-            return;
-        }
-
-        activeVignetteName = windowName;
-        startSequence(vignette.steps, NARRATIVE_TYPES.VIGNETTE);
-    }
-
-    function clear() {
-        stopTyping();
-        transition = null;
-        activeSequence = [];
-        activeNarrativeType = null;
-        currentStepIndex = -1;
-        activeVignetteName = null;
-        isWaitingForLineHold = false;
-        isWaitingForFlashInput = false;
-        lineHoldElapsed = 0;
-        setBlackoutOpacity(0);
-        clearText();
-    }
-
-    return {
-        updateCutsceneState,
-        playWindowVignette,
-        clear,
-        triggerFlash() {
-            if (typeof vignetteFlashHandler === 'function') {
-                vignetteFlashHandler();
-            }
-
-            if (!isWaitingForFlashInput || activeNarrativeType !== NARRATIVE_TYPES.VIGNETTE) {
-                return false;
-            }
-
-            isWaitingForFlashInput = false;
-            currentStepIndex += 1;
-            processSequenceStep();
-            return true;
-        },
-        setOnVignetteComplete(callback) {
-            onVignetteComplete = callback;
-        },
-        setRevealHandler(handler) {
-            vignetteRevealHandler = handler;
-        },
-        setFlashHandler(handler) {
-            vignetteFlashHandler = handler;
-        },
-    };
-}

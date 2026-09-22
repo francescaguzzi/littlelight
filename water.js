@@ -1,5 +1,4 @@
 import * as THREE from "three";
-// import { Water } from 'three/addons/objects/Water.js';
 
 /* ============================================================
    VERTEX SHADER — 6 onde di Gerstner + normale analitica
@@ -8,7 +7,7 @@ import * as THREE from "three";
 
 const NUM_WAVES = 6;
 
-const waterVertexShader = /* glsl */ `
+const waterVertexShader = `
 
 uniform float uTime;
 uniform float uWaveHeight;      // moltiplicatore globale (GUI)
@@ -86,7 +85,7 @@ void main() {
    FRAGMENT SHADER
    ============================================================ */
 
-const waterFragmentShader = /* glsl */ `
+const waterFragmentShader = `
 
 uniform sampler2D uReflectionTexture;
 uniform sampler2D uRefractionTexture;
@@ -469,10 +468,6 @@ export function createWater(light, hasFog = false, options = {}) {
     return water;
 }
 
-/* ============================================================
-   GUI (dat.GUI) — addWaterGui(gui, water)
-   Restituisce la folder, così puoi chiuderla o rimuoverla.
-   ============================================================ */
 
 export function addWaterGui(gui, water) {
 
@@ -512,38 +507,3 @@ export function addWaterGui(gui, water) {
 
     return folder;
 }
-
-// export function createSimpleWater(light, hasFog) {
-
-//     const waterNormalMap = new THREE.TextureLoader().load(
-//         './assets/waternormals.jpg',
-//         function (texture) {
-//             texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-//             waterNormalMap.repeat.set(20, 20);
-//             texture.colorSpace = THREE.NoColorSpace;
-//         }
-//     );
-
-//     const waterGeometry = new THREE.PlaneGeometry(200, 200, 128, 128);
-
-//     const water = new Water(
-//         waterGeometry,
-//         {
-//             textureWidth: 256,
-//             textureHeight: 256,
-//             waterNormals: waterNormalMap,
-//             sunDirection: light.position.clone().normalize(),
-//             sunColor: 0x92b0bf, // 0x004444,
-//             waterColor: 0x34506C,
-//             distortionScale: 3,
-//             size: 10,
-//             alpha: 0.5,
-//             fog: hasFog
-//         }
-//     );
-
-//     water.rotation.x = -Math.PI / 2;
-//     water.position.y = -0.2;
-
-//     return water;
-// }

@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { SCENE_DURATIONS } from './story.js';
+import { SCENE_DURATIONS } from './cutscene.js';
 
 let sceneState = 'PANORAMIC_VIEW';
 let stateTimer = 0;
 const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
 let littleStar = null;
 let starFlashTimer = 0;
+let starStoryBrightness = 0;
 
 let starAngle = Math.atan2(12, 8);
 let starRadius = Math.sqrt(8 * 8 + 12 * 12);
@@ -21,8 +22,9 @@ export function triggerStarFlash() {
 }
 
 export function setStarStoryBrightness(amount) {
-    if (!littleStar) return;
-    littleStar.material.opacity = THREE.MathUtils.clamp(littleStar.material.opacity + amount, 0.15, 1.0);
+    // Luminosità cumulativa "narrativa": non tocca direttamente la material,
+    // viene applicata nella formula del twinkle in updateStarLogic.
+    starStoryBrightness = THREE.MathUtils.clamp(starStoryBrightness + (amount || 0), 0, 0.6);
 }
 
 function captureWindowFocusState() {
@@ -129,10 +131,16 @@ export function updateStarLogic(camera, clock, delta) {
         ? Math.sin((1 - (starFlashTimer / STAR_FLASH_DURATION)) * Math.PI)
         : 0;
 
-    // Twinkling effect: oscillate opacity between 0.15 and current opacity value + 0.15 based on flashValue
-    const baseOpacity = 0.15;
-    const maxOpacity = 0.30;
-    littleStar.material.opacity = THREE.MathUtils.clamp(baseOpacity + flashValue * (maxOpacity - baseOpacity), baseOpacity, maxOpacity);
+    // Twinkling effect: oscillazione di opacità. La luminosità narrativa
+    // (STORY brightness) sposta l'intera fascia verso l'alto: la stella si
+    // fa via via più luminosa con l'avanzare delle vignette.
+    const baseOpacity = 0.15 + starStoryBrightness;
+    const maxOpacity = 0.30 + starStoryBrightness;
+    littleStar.material.opacity = THREE.MathUtils.clamp(
+        baseOpacity + flashValue * (maxOpacity - baseOpacity),
+        baseOpacity,
+        maxOpacity
+    );
     starFlashTimer = Math.max(0, starFlashTimer - delta);
     
     if (windowFocusTarget) {
