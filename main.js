@@ -306,7 +306,7 @@ function init() {
     /* ---------------------------------------------- */
 
     const loader = new GLTFLoader();
-    loader.load('./assets/finalbuilding.gltf', function (gltf) {
+    loader.load('./assets/building.gltf', function (gltf) {
         model = gltf.scene;
 
         model.traverse((child) => {

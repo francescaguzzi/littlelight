@@ -213,7 +213,7 @@ export function createWater(light, hasFog = false, options = {}) {
         size              = 200,
         segments          = 200,
         y                 = -0.4,
-        normalMapUrl      = './assets/textures/waternormals.jpg',
+        normalMapUrl      = './assets/other-textures/waternormals.jpg',
         renderTargetScale = 0.5,
         clipBias          = 0.003,
         shallowColor      = 0x34506C,

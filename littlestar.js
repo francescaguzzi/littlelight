@@ -76,7 +76,7 @@ export function restoreInteractiveFromWindowFocus() {
 }
 
 export function initLittleStar(scene) {
-    const starTexture = new THREE.TextureLoader().load('./assets/textures/stella.png');
+    const starTexture = new THREE.TextureLoader().load('./assets/other-textures/star.png');
     const littleGeo = new THREE.PlaneGeometry(0.5, 0.5);
     const littleMat = new THREE.MeshBasicMaterial({
         map: starTexture,

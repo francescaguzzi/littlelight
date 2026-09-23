@@ -10,7 +10,7 @@ const STAR_FOCUS_DISTANCE = 1.6;
 const CAMERA_LERP_SPEED = 2;
 const BACKLIGHT_INSET = 0.5; // distanza dal vetro, verso l'interno dell'edificio
 const VIGNETTE_INSET = 0.2; // plane vignetta: dentro il vetro, davanti al backlight
-const VIGNETTE_TEXTURE_BASE = './assets/textures/vignettes/';
+const VIGNETTE_TEXTURE_BASE = './assets/other-textures/silhouettes/';
 
 const DEFAULT_WINDOW_EMISSIVE = { color: 0xffaa55, intensity: 3.0 };
 
