@@ -33,8 +33,8 @@ export const DROP_SOUND_SRC = './assets/audio/splash.mp3';
 //   - { type: 'text', hold }      -> typewriter + hold
 //   - { type: 'pause', duration } -> attesa di `duration` secondi
 //   - { type: 'flash' }           -> attesa input (Space) con flash handler
-//   - { type: 'reveal', objects } -> reveal handler, avanza subito
-// Fallback retro-compatibili: { text }, { flash }, { reveal: [...] }.
+//   - { type: 'texture' }         -> cambio texture vignetta, avanza subito
+// Fallback retro-compatibili: { text }, { flash }.
 function normalizeSequence(sequenceDefinition, defaultHold) {
     if (!sequenceDefinition) return [];
 
@@ -48,16 +48,8 @@ function normalizeSequence(sequenceDefinition, defaultHold) {
 
                 const type = (entry.type)
                     || (entry.text ? 'text' : null)
-                    || (entry.flash ? 'flash' : null)
-                    || (entry.reveal ? 'reveal' : null);
+                    || (entry.flash ? 'flash' : null);
                 if (!type) return null;
-
-                if (type === 'reveal') {
-                    return {
-                        type: 'reveal',
-                        objects: Array.isArray(entry.objects) ? entry.objects : entry.reveal || [],
-                    };
-                }
 
                 return { ...entry, type, hold: entry.hold ?? defaultHold };
             })
@@ -104,7 +96,7 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
     let isEndingPlaying = false;
     let onVignetteComplete = null;
     let onSequenceComplete = null;
-    let vignetteRevealHandler = null;
+    let vignetteTextureHandler = null;
     let vignetteFlashHandler = null;
     let isWaitingForFlashInput = false;
     const dropSound = createDropSoundPlayer(dropSoundSrc);
@@ -239,9 +231,11 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
                 break;
             }
 
-            case 'reveal': {
-                if (typeof vignetteRevealHandler === 'function' && Array.isArray(currentStep.objects)) {
-                    vignetteRevealHandler(currentStep.objects);
+            case 'texture': {
+                // Avanza alla texture successiva della finestra attiva: quale
+                // sia lo sa il windows controller (lista ordinata in story.js).
+                if (typeof vignetteTextureHandler === 'function') {
+                    vignetteTextureHandler();
                 }
                 currentStepIndex += 1;
                 processSequenceStep();
@@ -446,8 +440,8 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
         setOnSequenceComplete(callback) {
             onSequenceComplete = callback;
         },
-        setRevealHandler(handler) {
-            vignetteRevealHandler = handler;
+        setTextureHandler(handler) {
+            vignetteTextureHandler = handler;
         },
         setFlashHandler(handler) {
             vignetteFlashHandler = handler;

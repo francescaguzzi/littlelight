@@ -9,6 +9,8 @@ const FOCUS_DISTANCE = 5;
 const STAR_FOCUS_DISTANCE = 1.6;
 const CAMERA_LERP_SPEED = 2;
 const BACKLIGHT_INSET = 0.5; // distanza dal vetro, verso l'interno dell'edificio
+const VIGNETTE_INSET = 0.2; // plane vignetta: dentro il vetro, davanti al backlight
+const VIGNETTE_TEXTURE_BASE = './assets/textures/vignettes/';
 
 const DEFAULT_WINDOW_EMISSIVE = { color: 0xffaa55, intensity: 3.0 };
 
@@ -102,6 +104,65 @@ function makeBacklight(windowMesh, color, outward, center) {
     return backlight;
 }
 
+// Immagine placeholder 1x1 (blu-notte scuro): mantiene valido il materiale
+// finché le texture vere non esistono su disco.
+const vignettePlaceholderImage = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#181430';
+    ctx.fillRect(0, 0, 1, 1);
+    return canvas;
+})();
+
+const textureLoader = new THREE.TextureLoader();
+
+/**
+ * Texture di vignetta con placeholder incorporato: parte come 1x1 scuro e,
+ * se il file esiste, l'immagine reale ne rimpiazza il contenuto a caricamento
+ * completato (l'identità della texture non cambia, niente rebind del
+ * materiale). File mancante -> resta il placeholder + console.info.
+ */
+function makeVignetteTexture(fileName) {
+    const texture = new THREE.Texture(vignettePlaceholderImage);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+
+    textureLoader.load(
+        VIGNETTE_TEXTURE_BASE + fileName,
+        (loaded) => {
+            texture.image = loaded.image;
+            texture.needsUpdate = true;
+        },
+        undefined,
+        () => console.info(`[vignette] texture placeholder non trovata: ${fileName}`)
+    );
+
+    return texture;
+}
+
+/**
+ * Plane della vignetta: poco dentro il vetro (VIGNETTE_INSET), quindi davanti
+ * al backlight plane (BACKLIGHT_INSET). Stessa logica di dimensionamento e
+ * orientamento di makeBacklight. MeshBasicMaterial è unlit: la texture NON
+ * reagisce alla RectAreaLight.
+ */
+function makeVignettePlane(windowMesh, outward, center, startTexture) {
+    const size = new THREE.Box3().setFromObject(windowMesh).getSize(new THREE.Vector3());
+    const width = Math.max((size.x || size.z) + BACKLIGHT_INSET, 0.1);
+    const height = Math.max(size.y + BACKLIGHT_INSET, 0.1);
+
+    const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(width, height),
+        new THREE.MeshBasicMaterial({ map: startTexture, side: THREE.DoubleSide, transparent: true })
+    );
+    plane.position.copy(center).addScaledVector(outward, -VIGNETTE_INSET);
+    plane.lookAt(center.clone().add(outward));
+
+    return plane;
+}
+
 function disposeBacklight(windowEntry) {
     if (!windowEntry.backlight) return;
     const backlight = windowEntry.backlight;
@@ -138,8 +199,8 @@ function activateAt(controller, index) {
  * l'ordine qui è l'ordine di attivazione delle vignette.
  *
  * Ogni definizione porta con sé la propria configurazione (delay random
- * prima dell'attivazione, colore/intensità del backlight, step della vignetta
- * e oggetti reveal), quindi non serve più alcuna tabella parallela.
+ * prima dell'attivazione, colore/intensità del backlight, texture della
+ * vignetta e step narrativi), quindi non serve alcuna tabella parallela.
  */
 export function setupWindows(model, scene, windowDefs, camera) {
     // Fondamentale: se il modello è stato appena caricato/aggiunto alla scena
@@ -163,17 +224,6 @@ export function setupWindows(model, scene, windowDefs, camera) {
         }
     });
 
-    // Oggetti reveal raccolti dagli step dichiarativi: nascosti all'avvio
-    // (niente lista duplicata: il setup li deriva dagli step).
-    const revealNames = new Set();
-    for (const def of windowDefs) {
-        for (const step of def.steps) {
-            if (step.type === 'reveal' && Array.isArray(step.objects)) {
-                step.objects.forEach((name) => revealNames.add(name));
-            }
-        }
-    }
-
     const windows = windowDefs
         .map((def) => {
             const mesh = byName.get(def.id);
@@ -188,6 +238,12 @@ export function setupWindows(model, scene, windowDefs, camera) {
             scene.add(backlight);
             scene.add(backlight.userData.glowMesh);
 
+            // Plane vignetta: visibile da subito con la texture iniziale
+            // (primo elemento della lista), dietro il vetro e davanti al glow.
+            const vignetteTextures = (def.vignette ?? []).map(makeVignetteTexture);
+            const vignettePlane = makeVignettePlane(mesh, outward, center, vignetteTextures[0] ?? null);
+            scene.add(vignettePlane);
+
             return {
                 id: def.id,
                 activationDelay: def.activationDelay ?? [2, 8],
@@ -201,6 +257,9 @@ export function setupWindows(model, scene, windowDefs, camera) {
                 targetOpacity: 1,
                 state: WINDOW_STATES.IDLE,
                 revealed: false,
+                vignettePlane,
+                vignetteTextures,
+                vignetteTextureIndex: 0,
             };
         })
         .filter(Boolean);
@@ -251,14 +310,6 @@ export function setupWindows(model, scene, windowDefs, camera) {
         activeWindow.backlightTargetIntensity = 0;
     };
 
-    revealNames.forEach((name) => {
-        const mesh = byName.get(name);
-        if (mesh) {
-            mesh.visible = false;
-            mesh.userData.isWindowReveal = true;
-        }
-    });
-
     return controller;
 }
 
@@ -275,14 +326,27 @@ export function startInteractiveWindowSequence(controller) {
         : 10;
 }
 
-export function triggerCurrentWindowReveal(controller, revealNames) {
-    if (!controller || !Array.isArray(revealNames)) return;
-    revealNames.forEach((name) => {
-        const target = controller.byName.get(name);
-        if (target) {
-            target.visible = true;
-        }
-    });
+/**
+ * Step "texture" della vignetta: avanza alla texture successiva della
+ * finestra attiva (lista ordinata `vignette` in story.js). Lista esaurita
+ * -> step ignorato con warning: step narrativi e texture vanno allineati.
+ */
+export function revealCurrentWindowTexture(controller) {
+    if (!controller || controller.currentIndex < 0) return;
+
+    const entry = controller.windows[controller.currentIndex];
+    if (!entry || !entry.vignettePlane) return;
+
+    const nextIndex = entry.vignetteTextureIndex + 1;
+    const next = entry.vignetteTextures[nextIndex];
+    if (!next) {
+        console.warn(`Finestra "${entry.id}": nessuna texture successiva, step ignorato.`);
+        return;
+    }
+
+    entry.vignetteTextureIndex = nextIndex;
+    entry.vignettePlane.material.map = next;
+    entry.vignettePlane.material.needsUpdate = true;
 }
 
 // Da chiamare dal listener di click del renderer — ndcX/ndcY in [-1, 1] (coordinate

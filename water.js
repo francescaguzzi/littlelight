@@ -5,7 +5,7 @@ import * as THREE from "three";
    La geometria è già ruotata su XZ (rotateX all'origine).
    ============================================================ */
 
-const NUM_WAVES = 6;
+const NUM_WAVES = 3;
 
 const waterVertexShader = `
 
@@ -213,7 +213,7 @@ export function createWater(light, hasFog = false, options = {}) {
         size              = 200,
         segments          = 200,
         y                 = -0.4,
-        normalMapUrl      = './assets/waternormals.jpg',
+        normalMapUrl      = './assets/textures/waternormals.jpg',
         renderTargetScale = 0.5,
         clipBias          = 0.003,
         shallowColor      = 0x34506C,

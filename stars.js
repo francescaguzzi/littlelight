@@ -11,7 +11,7 @@ function createStarChunk(count, baseIndex = 0) {
     starGeometry.setAttribute('aPhase', new THREE.InstancedBufferAttribute(phases, 1));
 
     const textureLoader = new THREE.TextureLoader();
-    const starTexture = textureLoader.load('./assets/stella.png');
+    const starTexture = textureLoader.load('./assets/textures/stella.png');
 
     const starMaterial = new THREE.ShaderMaterial({
         uniforms: {

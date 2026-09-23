@@ -11,7 +11,7 @@ import { createStarrySky, updateStarrySkyVisibility } from './stars.js';
 import { initLittleStar, updateStarLogic, isWindowFocusActive, triggerStarFlash, setStarStoryBrightness,
 } from './littlestar.js';
 import { createWater, addWaterGui } from './water.js';
-import { setupWindows, updateWindows, handleWindowClick, cancelWindowFocus, startInteractiveWindowSequence, triggerCurrentWindowReveal,
+import { setupWindows, updateWindows, handleWindowClick, cancelWindowFocus, startInteractiveWindowSequence, revealCurrentWindowTexture,
 } from './windows.js';
 import { createNarrativeManager } from './cutscene.js';
 import { STORY } from './story.js';
@@ -376,9 +376,9 @@ function init() {
                 windowsController.finishWindowSequenceStep(windowName);
             }
         });
-        storyNarrator.setRevealHandler((items) => {
+        storyNarrator.setTextureHandler(() => {
             if (windowsController) {
-                triggerCurrentWindowReveal(windowsController, items);
+                revealCurrentWindowTexture(windowsController);
             }
         });
         storyNarrator.setFlashHandler(() => {
