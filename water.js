@@ -5,7 +5,7 @@ import * as THREE from "three";
    La geometria è già ruotata su XZ (rotateX all'origine).
    ============================================================ */
 
-const NUM_WAVES = 3;
+const NUM_WAVES = 6;
 
 const waterVertexShader = `
 
@@ -129,19 +129,29 @@ float sceneViewZ(vec2 uv) {
     return perspectiveDepthToViewZ(d, uCameraNear, uCameraFar);
 }
 
+vec2 rot(vec2 p, float a) {
+    float c = cos(a), s = sin(a);
+    return vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+}
+
 void main() {
 
     vec2 screenUV = gl_FragCoord.xy / uResolution;
 
     /* ---- increspature: due layer di normal map a scale diverse ---- */
 
-    float t = uTime * uRippleSpeed;
-    vec2 uv1 = vWorldPosition.xz * uNormalScale       + vec2( t * 0.020, t * 0.014);
-    vec2 uv2 = vWorldPosition.xz * uNormalScale * 2.7 - vec2( t * 0.016, t * 0.031);
+float t = uTime * uRippleSpeed;
+vec2 wp = vWorldPosition.xz * uNormalScale;
 
-    vec3 n1 = texture2D(uNormalMap, uv1).rgb * 2.0 - 1.0;
-    vec3 n2 = texture2D(uNormalMap, uv2).rgb * 2.0 - 1.0;
-    vec2 detail = (n1.xy + n2.xy) * 0.5;
+vec2 uv1 = rot(wp,        0.35) + vec2( t * 0.020,  t * 0.014);
+vec2 uv2 = rot(wp * 2.37, -0.83) - vec2( t * 0.016,  t * 0.031);
+vec2 uv3 = rot(wp * 5.13, 1.57) + vec2(-t * 0.027,  t * 0.009);
+
+vec3 n1 = texture2D(uNormalMap, uv1).rgb * 2.0 - 1.0;
+vec3 n2 = texture2D(uNormalMap, uv2).rgb * 2.0 - 1.0;
+vec3 n3 = texture2D(uNormalMap, uv3).rgb * 2.0 - 1.0;
+
+vec2 detail = (n1.xy + n2.xy * 0.6 + n3.xy * 0.35) / 1.95;
 
     vec3 normal = normalize(vNormal + vec3(detail.x, 0.0, detail.y) * uNormalStrength);
 
@@ -455,6 +465,64 @@ export function createWater(light, hasFog = false, options = {}) {
         renderer.setRenderTarget(currentRT);
 
         if (camera.viewport !== undefined) renderer.state.viewport(camera.viewport);
+    };
+
+    /* ---------- replica CPU delle onde (per gli oggetti galleggianti) ---------- */
+
+    const sampleTangent  = new THREE.Vector3();
+    const sampleBinormal = new THREE.Vector3();
+    const sampleNormal   = new THREE.Vector3();
+    const sampleResult   = { height: 0, normal: sampleNormal };
+
+    /**
+     * Stessa matematica Gerstner del vertex shader, eseguita su CPU: dato
+     * un punto (x, z) in coordinate mondo restituisce altezza e normale
+     * della superficie usando lo stesso uTime del frame corrente, così gli
+     * oggetti che galleggiano restano sincronizzati con l'acqua.
+     * L'altezza restituita è relativa a water.position.y (piano a riposo).
+     * NB: usa le prime NUM_WAVES onde, esattamente come lo shader.
+     */
+    water.sampleWaves = function (x, z) {
+
+        const time      = uniforms.uTime.value;
+        const heightMul = uniforms.uWaveHeight.value;
+        const speedMul  = uniforms.uWaveSpeed.value;
+
+        let height = 0;
+        sampleTangent.set(1, 0, 0);
+        sampleBinormal.set(0, 0, 1);
+
+        for (let i = 0; i < NUM_WAVES; i++) {
+
+            const wave      = uniforms.uWaves.value[i];
+            const steepness = wave.z * heightMul;
+            const k         = 6.28318530718 / wave.w;
+            const c         = Math.sqrt(9.81 / k) * speedMul;
+
+            const len = Math.hypot(wave.x, wave.y);
+            const dx  = wave.x / len;
+            const dz  = wave.y / len;
+
+            const f    = k * (dx * x + dz * z - c * time);
+            const a    = steepness / k;
+            const sinF = Math.sin(f);
+            const cosF = Math.cos(f);
+
+            height += a * sinF;
+
+            sampleTangent.x  += -dx * dx * (steepness * sinF);
+            sampleTangent.y  +=  dx * (steepness * cosF);
+            sampleTangent.z  += -dx * dz * (steepness * sinF);
+
+            sampleBinormal.x += -dx * dz * (steepness * sinF);
+            sampleBinormal.y +=  dz * (steepness * cosF);
+            sampleBinormal.z += -dz * dz * (steepness * sinF);
+        }
+
+        sampleNormal.crossVectors(sampleBinormal, sampleTangent).normalize();
+
+        sampleResult.height = height;
+        return sampleResult;
     };
 
     water.dispose = function () {

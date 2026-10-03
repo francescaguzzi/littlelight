@@ -448,8 +448,8 @@ export function updateWindows(controller, delta, camera, controls) {
         // La finestra torna a piena opacità; si spegne solo il backlight.
         active.targetOpacity = 1;
 
-        // Fade-out completo del backlight, poi rimozione.
-        if (!active.backlight || active.backlight.intensity < 0.02) {
+        // Fade-out completo del backlight, poi rimozione. // SISTEMARE
+        if (active.backlight) {
             disposeBacklight(active);
             active.state = WINDOW_STATES.COMPLETED;
             controller.pendingWindowActivation = true;

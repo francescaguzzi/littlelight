@@ -19,9 +19,15 @@ import { STORY } from './story.js';
 /* ----------------------------------------------- */
 
 let camera, scene, renderer, controls, composer, mixer;
-let water, model, moon, starrySky;
+let water, model, moon, starrySky, boat;
 let windowsController;
 let appStarted = false;
+
+// Stato per il galleggiamento della barca sulle onde
+let boatBaseOffset = 0;
+let boatBaseQuaternion = null;
+const boatTiltQuaternion = new THREE.Quaternion();
+const UP_VECTOR = new THREE.Vector3(0, 1, 0);
 
 let STORY_MODE = true;
 
@@ -320,52 +326,6 @@ function init() {
         });
         scene.add(model);
 
-        // DEBUG
-
-        // const textures = new Map();
-        // model.traverse((object) => {
-        //     if (!object.isMesh) return;
-        //     const materials = Array.isArray(object.material)
-        //         ? object.material
-        //         : [object.material];
-        //     materials.forEach((material) => {
-        //         for (const key in material) {
-        //             const texture = material[key];
-        //             if (!texture || !texture.isTexture) continue;
-        //             const image = texture.image;
-        //             if (!image) continue;
-        //             const width = image.width || image.videoWidth;
-        //             const height = image.height || image.videoHeight;
-        //             const keyImage =
-        //                 `${width}x${height}_${texture.name}`;
-        //             if (!textures.has(keyImage)) {
-        //                 textures.set(keyImage, {
-        //                     name: texture.name,
-        //                     width,
-        //                     height,
-        //                     count: 0
-        //                 });
-        //             }
-        //             textures.get(keyImage).count++;
-        //         }
-        //     });
-        // });
-        // console.table(
-        //     [...textures.values()]
-        //         .sort((a, b) =>
-        //             (b.width * b.height) -
-        //             (a.width * a.height)
-        //         )
-        // );
-        // let total = 0;
-        // for (const tex of textures.values()) {
-        //     total += tex.width * tex.height * 4;
-        // }
-        // console.log(
-        //     "Texture uniche stimate:",
-        //     `${(total / 1024 / 1024).toFixed(1)} MB`
-        // );
-
         windowsController = setupWindows(model, scene, STORY.windows, camera);
         windowsController.onWindowFramed = storyNarrator.playWindowVignette;
         windowsController.onWindowFocusCleared = storyNarrator.clear;
@@ -393,6 +353,23 @@ function init() {
                 mixer.clipAction(clip).play();
             });
         }
+
+    }, undefined, function (error) {
+        console.error(error);
+    });
+
+
+    loader.load('./assets/boat.glb', function (gltf) {
+        boat = gltf.scene;
+        boat.position.set(12, -0.8, 8);
+        boat.rotation.set(0, Math.PI / 2, 0);
+        boat.scale.set(1.5, 1.5, 1.5);
+        scene.add(boat);
+
+        // Offset verticale rispetto al piano dell'acqua e orientamento di
+        // base: il galleggiamento li riapplica ogni frame sopra le onde.
+        boatBaseOffset = boat.position.y - (water ? water.position.y : 0);
+        boatBaseQuaternion = boat.quaternion.clone();
 
     }, undefined, function (error) {
         console.error(error);
@@ -459,6 +436,19 @@ function animate() {
                 child.material.uniforms.uTime.value = t;
             }
         });
+    }
+
+    // La barca galleggia: campiona altezza e normale delle onde (stessa
+    // matematica dello shader) nella sua posizione e le segue con un
+    // movimento smorzato.
+    if (boat && water && boatBaseQuaternion) {
+        const { height, normal } = water.sampleWaves(boat.position.x, boat.position.z);
+
+        const targetY = water.position.y + height + boatBaseOffset;
+        boat.position.y += (targetY - boat.position.y) * Math.min(1, delta * 6);
+
+        boatTiltQuaternion.setFromUnitVectors(UP_VECTOR, normal).multiply(boatBaseQuaternion);
+        boat.quaternion.slerp(boatTiltQuaternion, Math.min(1, delta * 4));
     }
 
     if (STORY_MODE && windowsController) {

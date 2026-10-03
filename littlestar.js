@@ -252,7 +252,7 @@ export function updateStarLogic(camera, clock, delta) {
         if (keys.w || keys.ArrowUp) starBaseY += moveSpeed;
         if (keys.s || keys.ArrowDown) starBaseY -= moveSpeed;
 
-        starBaseY = THREE.MathUtils.clamp(starBaseY, 2, 80);
+        starBaseY = THREE.MathUtils.clamp(starBaseY, 2, 20);
         littleStar.position.x = Math.cos(starAngle) * starRadius;
         littleStar.position.z = Math.sin(starAngle) * starRadius;
 
