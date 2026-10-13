@@ -5,12 +5,17 @@ import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUnifo
 /* ---------------------------------------------- */
 
 const FADE_SPEED = 0.05;
+// Fade-out di chiusura: più lento; il backlight/glow vengono rimossi solo a
+// convergenza avvenuta (vedi soglie e ramo CLOSING in updateWindows).
+const CLOSING_FADE_SPEED = 0.02;
+const BACKLIGHT_DISPOSE_INTENSITY = 0.05;
+const GLOW_DISPOSE_OPACITY = 0.02;
 const FOCUS_DISTANCE = 5;
 const STAR_FOCUS_DISTANCE = 1.6;
 const CAMERA_LERP_SPEED = 2;
 const BACKLIGHT_INSET = 0.5; // distanza dal vetro, verso l'interno dell'edificio
 const VIGNETTE_INSET = 0.2; // plane vignetta: dentro il vetro, davanti al backlight
-const VIGNETTE_TEXTURE_BASE = './assets/other-textures/silhouettes/';
+const VIGNETTE_TEXTURE_BASE = './assets/other-textures/scenes/';
 
 const DEFAULT_WINDOW_EMISSIVE = { color: 0xffaa55, intensity: 3.0 };
 
@@ -238,10 +243,18 @@ export function setupWindows(model, scene, windowDefs, camera) {
             scene.add(backlight);
             scene.add(backlight.userData.glowMesh);
 
-            // Plane vignetta: visibile da subito con la texture iniziale
-            // (primo elemento della lista), dietro il vetro e davanti al glow.
-            const vignetteTextures = (def.vignette ?? []).map(makeVignetteTexture);
-            const vignettePlane = makeVignettePlane(mesh, outward, center, vignetteTextures[0] ?? null);
+            // Texture della vignetta indicizzate per NOME: lo step di script
+            // richiama la texture esplicitamente, così un riavvio della vignetta
+            // non può disallineare script e texture. La prima texture della
+            // lista è quella iniziale (mostrata prima del primo step).
+            const vignetteTexturesByName = new Map();
+            for (const fileName of def.vignette ?? []) {
+                if (!vignetteTexturesByName.has(fileName)) {
+                    vignetteTexturesByName.set(fileName, makeVignetteTexture(fileName));
+                }
+            }
+            const vignetteInitialTexture = vignetteTexturesByName.values().next().value ?? null;
+            const vignettePlane = makeVignettePlane(mesh, outward, center, vignetteInitialTexture);
             scene.add(vignettePlane);
 
             return {
@@ -258,8 +271,8 @@ export function setupWindows(model, scene, windowDefs, camera) {
                 state: WINDOW_STATES.IDLE,
                 revealed: false,
                 vignettePlane,
-                vignetteTextures,
-                vignetteTextureIndex: 0,
+                vignetteTexturesByName,
+                vignetteInitialTexture,
             };
         })
         .filter(Boolean);
@@ -327,25 +340,39 @@ export function startInteractiveWindowSequence(controller) {
 }
 
 /**
- * Step "texture" della vignetta: avanza alla texture successiva della
- * finestra attiva (lista ordinata `vignette` in story.js). Lista esaurita
- * -> step ignorato con warning: step narrativi e texture vanno allineati.
+ * Step "texture" della vignetta: mostra sulla finestra attiva la texture
+ * indicata per NOME. Il nome è legato esplicitamente allo step di script
+ * (story.js), quindi riavviare una vignetta non può disallineare script e
+ * texture. Nome sconosciuto -> step ignorato con warning.
  */
-export function revealCurrentWindowTexture(controller) {
+export function showWindowTexture(controller, textureName) {
     if (!controller || controller.currentIndex < 0) return;
 
     const entry = controller.windows[controller.currentIndex];
     if (!entry || !entry.vignettePlane) return;
 
-    const nextIndex = entry.vignetteTextureIndex + 1;
-    const next = entry.vignetteTextures[nextIndex];
-    if (!next) {
-        console.warn(`Finestra "${entry.id}": nessuna texture successiva, step ignorato.`);
+    const texture = entry.vignetteTexturesByName.get(textureName);
+    if (!texture) {
+        console.warn(`Finestra "${entry.id}": texture "${textureName}" non trovata, step ignorato.`);
         return;
     }
 
-    entry.vignetteTextureIndex = nextIndex;
-    entry.vignettePlane.material.map = next;
+    entry.vignettePlane.material.map = texture;
+    entry.vignettePlane.material.needsUpdate = true;
+}
+
+/**
+ * Riavvio della vignetta (uscita + ripresa): riporta il plane alla texture
+ * iniziale della finestra, così la parte di script prima del primo step
+ * "texture" mostra di nuovo la scena di partenza.
+ */
+export function resetWindowVignetteTexture(controller, windowName) {
+    if (!controller) return;
+
+    const entry = controller.windows.find((w) => w.id === windowName);
+    if (!entry || !entry.vignettePlane || !entry.vignetteInitialTexture) return;
+
+    entry.vignettePlane.material.map = entry.vignetteInitialTexture;
     entry.vignettePlane.material.needsUpdate = true;
 }
 
@@ -409,10 +436,13 @@ export function updateWindows(controller, delta, camera, controls) {
     }
 
     for (const w of controller.windows) {
-        w.material.opacity += (w.targetOpacity - w.material.opacity) * FADE_SPEED;
+        // Le finestre in chiusura sfumano più lentamente: niente stacco netto
+        // di luce a fine vignetta.
+        const fadeSpeed = w.state === WINDOW_STATES.CLOSING ? CLOSING_FADE_SPEED : FADE_SPEED;
+        w.material.opacity += (w.targetOpacity - w.material.opacity) * fadeSpeed;
 
         if (w.backlight) {
-            w.backlight.intensity += (w.backlightTargetIntensity - w.backlight.intensity) * FADE_SPEED;
+            w.backlight.intensity += (w.backlightTargetIntensity - w.backlight.intensity) * fadeSpeed;
 
             // Fade del glow plane con lo stesso lerp, MA senza divisioni:
             // `intensity / target = Infinity|NaN` su finestre idle o in
@@ -422,7 +452,7 @@ export function updateWindows(controller, delta, camera, controls) {
                 const glowTarget = w.backlightTargetIntensity > 0 ? 1 : 0;
                 const current = w.glowOpacity ?? 0;
                 w.glowOpacity = THREE.MathUtils.clamp(
-                    current + (glowTarget - current) * FADE_SPEED,
+                    current + (glowTarget - current) * fadeSpeed,
                     0, 1
                 );
                 glow.material.opacity = w.glowOpacity;
@@ -448,8 +478,13 @@ export function updateWindows(controller, delta, camera, controls) {
         // La finestra torna a piena opacità; si spegne solo il backlight.
         active.targetOpacity = 1;
 
-        // Fade-out completo del backlight, poi rimozione. // SISTEMARE
-        if (active.backlight) {
+        // Attende che backlight e glow siano scesi (lerp lento, vedi
+        // CLOSING_FADE_SPEED) prima di rimuoverli: evita lo stacco netto di
+        // luce a fine vignetta.
+        const backlightFaded = !active.backlight
+            || active.backlight.intensity < BACKLIGHT_DISPOSE_INTENSITY;
+        const glowFaded = (active.glowOpacity ?? 0) < GLOW_DISPOSE_OPACITY;
+        if (backlightFaded && glowFaded) {
             disposeBacklight(active);
             active.state = WINDOW_STATES.COMPLETED;
             controller.pendingWindowActivation = true;

@@ -33,7 +33,7 @@ export const DROP_SOUND_SRC = './assets/audio/splash.mp3';
 //   - { type: 'text', hold }      -> typewriter + hold
 //   - { type: 'pause', duration } -> attesa di `duration` secondi
 //   - { type: 'flash' }           -> attesa input (Space) con flash handler
-//   - { type: 'texture' }         -> cambio texture vignetta, avanza subito
+//   - { type: 'texture', name }   -> mostra la texture `name` della vignetta, avanza subito
 // Fallback retro-compatibili: { text }, { flash }.
 function normalizeSequence(sequenceDefinition, defaultHold) {
     if (!sequenceDefinition) return [];
@@ -95,6 +95,7 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
     let activeVignetteName = null;
     let isEndingPlaying = false;
     let onVignetteComplete = null;
+    let onVignetteStart = null;
     let onSequenceComplete = null;
     let vignetteTextureHandler = null;
     let vignetteFlashHandler = null;
@@ -232,10 +233,10 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
             }
 
             case 'texture': {
-                // Avanza alla texture successiva della finestra attiva: quale
-                // sia lo sa il windows controller (lista ordinata in story.js).
+                // Mostra la texture indicata per nome sullo step: quale sia lo
+                // sa il windows controller (mappa nome -> texture in story.js).
                 if (typeof vignetteTextureHandler === 'function') {
-                    vignetteTextureHandler();
+                    vignetteTextureHandler(currentStep.name);
                 }
                 currentStepIndex += 1;
                 processSequenceStep();
@@ -376,6 +377,13 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
         }
 
         activeVignetteName = windowName;
+
+        // Avvio reale (o riavvio dopo un'uscita): il gestore riporta la
+        // texture della finestra a quella iniziale prima che lo script riparta.
+        if (typeof onVignetteStart === 'function') {
+            onVignetteStart(windowName);
+        }
+
         startSequence(vignette.steps, NARRATIVE_TYPES.VIGNETTE);
     }
 
@@ -436,6 +444,9 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
         },
         setOnVignetteComplete(callback) {
             onVignetteComplete = callback;
+        },
+        setOnVignetteStart(callback) {
+            onVignetteStart = callback;
         },
         setOnSequenceComplete(callback) {
             onSequenceComplete = callback;
