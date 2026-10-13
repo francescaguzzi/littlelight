@@ -275,7 +275,7 @@ function init() {
     });
     
     composer = new EffectComposer(renderer, renderTarget);
-    composer.setPixelRatio(window.devicePixelRatio);
+    composer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 
     const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
