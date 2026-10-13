@@ -76,7 +76,7 @@ export const STORY = {
                 { type: 'texture', name: '/2/guardapianta.png' },
                 { type: 'text', text: '"Mom gave me this plant."', hold: 1.2 },
                 { type: 'pause', duration: 0.8 },
-                { type: 'text', text: '"She said that even when all its leaves fall, it will still grow."', hold: 1.5 },
+                { type: 'text', text: '"She said that even when all its leaves fall down, it will still grow."', hold: 1.5 },
                 { type: 'pause', duration: 0.5 },
                 { type: 'text', text: '"..she just needs a little time."', hold: 1.5 },
                 { type: 'pause', duration: 0.5 },
@@ -105,11 +105,11 @@ export const STORY = {
                 { type: 'text', text: '"What\'s the point of hands that remember, if the ears don\'t?"', hold: 1.0 },
                 { type: 'flash' },
                 { type: 'texture', name: '/3/luce.png' },
-                { type: 'pause', duration: 2.0 },
+                { type: 'pause', duration: 4.0 },
                 { type: 'texture', name: '/3/suona.png' },
-                { type: 'pause', duration: 2.5 },
+                { type: 'pause', duration: 3.5 },
                 { type: 'text', text: '"...they still know."', hold: 1.2 },
-                { type: 'text', text: '"...I can feel it, even know."', hold: 1.2 },
+                { type: 'text', text: '"...I can feel it, even now."', hold: 1.2 },
             ],
         },
         {
@@ -124,17 +124,18 @@ export const STORY = {
             steps: [
                 { type: 'texture', name: '/4/croccantini.png' },
                 { type: 'pause', duration: 2.0 },
-                { type: 'text', text: '"...right... No one to feed."', hold: 1.0 },
+                { type: 'text', text: '"...right... no one to feed."', hold: 1.0 },
                 { type: 'pause', duration: 0.5 },
                 { type: 'text', text: '"You always finished it before I even set it down."', hold: 1.5 },
                 { type: 'pause', duration: 1.0 },
                 { type: 'texture', name: '/4/seduto.png' },
-                { type: 'text', text: '"I wish you were still here to make a mess of this kitchen."', hold: 2.0 },
+                { type: 'text', text: '"I wish you were still here to make a mess of this kitchen..."', hold: 2.0 },
                 { type: 'flash' },
                 { type: 'texture', name: '/4/dog.png' },
                 { type: 'text', text: '"...hey, buddy."', hold: 1.2 },
                 { type: 'pause', duration: 2.0 },
                 { type: 'text', text: '"Still hungry, huh?"', hold: 1.2 },
+                { type: 'pause', duration: 3.0 },
                 { type: 'texture', name: '/4/seduto.png' },
                 { type: 'pause', duration: 2.0 },
                 { type: 'text', text: '"...I\'ll leave the bowl out a little longer."', hold: 2.5 },
@@ -143,7 +144,7 @@ export const STORY = {
         {
             id: 'window-5-fan',
             activationDelay: [5, 12],
-            backlight: { color: 0xdd532d, intensity: 3.0 },
+            backlight: { color: 0xb77724, intensity: 3.0 },
             vignette: [
                 '/5/profilo.png',
                 '/5/girata.png',
@@ -153,16 +154,31 @@ export const STORY = {
                 { type: 'pause', duration: 2.0 },
                 { type: 'text', text: '"I wish someone could hear me."', hold: 1.0 },
                 { type: 'flash' },
+                { type: 'pause', duration: 2.0 },
                 { type: 'texture', name: '/5/girata.png' },
                 { type: 'pause', duration: 1.0 },
-                { type: 'text', text: '"...Are you there?..."', hold: 1.2 },
+                { type: 'text', text: '"...Are you there...?"', hold: 1.2 },
                 { type: 'pause', duration: 2.5 },
-                { type: 'text', text: '"I can see you."', hold: 1.2 },
+                { type: 'text', text: '"I can see you."', hold: 2.2 },
             ],
         },
     ],
 
+    // Cutscene conclusiva: parte dal nero, riporta la stellina in cielo tra le
+    // altre (callback "showStarSky", gestito in main.js), mostra le prime righe
+    // dell'ending, poi fade a nero e la frase finale che resta fissa.
     ending: {
-        lines: [],
+        steps: [
+            { type: 'fade', to: 1, duration: 3.0 },          // nero dopo l'ultima vignetta
+            { type: 'callback', name: 'showStarSky' },       // a nero: stella e camera in cielo
+            { type: 'pause', duration: 1.5 },                // respiro sul nero
+            { type: 'fade', to: 0, duration: 3.5 },          // reveal: la stellina tra le altre
+            { type: 'text', text: 'That night, the little star understood the most important thing of them all...', hold: 2.0 },
+            { type: 'text', text: '...sometimes, a wish doesn\'t need to come true.', hold: 2.0 },
+            { type: 'pause', duration: 1.5 },
+            { type: 'fade', to: 1, duration: 3.0 },          // nero finale
+            { type: 'pause', duration: 0.8 },
+            { type: 'text', text: 'It only needs a little light.', hold: Infinity },
+        ],
     },
 };

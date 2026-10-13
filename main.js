@@ -8,7 +8,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { createStarrySky, updateStarrySkyVisibility } from './stars.js';
-import { initLittleStar, updateStarLogic, isWindowFocusActive, triggerStarFlash, setStarStoryBrightness,
+import { initLittleStar, updateStarLogic, isWindowFocusActive, triggerStarFlash, setStarStoryBrightness, startEndingSequence,
 } from './littlestar.js';
 import { createWater, addWaterGui } from './water.js';
 import { setupWindows, updateWindows, handleWindowClick, cancelWindowFocus, startInteractiveWindowSequence, showWindowTexture, resetWindowVignetteTexture,
@@ -351,6 +351,18 @@ function init() {
                 triggerStarFlash();
             }
         });
+        storyNarrator.setActionHandler((name) => {
+            if (name === 'showStarSky') {
+                const starPosition = startEndingSequence(camera);
+                // La stella è ora l'unico punto d'interesse: allinea il target
+                // di OrbitControls ad essa e disabilita i controlli, così il
+                // framing dell'apertura non viene sovrascritto.
+                if (controls) {
+                    controls.enabled = false;
+                    if (starPosition) controls.target.copy(starPosition);
+                }
+            }
+        });
 
         if (gltf.animations && gltf.animations.length > 0) {
             mixer = new THREE.AnimationMixer(model);
@@ -384,6 +396,9 @@ function init() {
 
     renderer.domElement.addEventListener('click', (event) => {
         if (!STORY_MODE || !windowsController) return;
+        // Durante la cutscene conclusiva i click sono ignorati: non devono
+        // annullare il focus né interrompere il finale.
+        if (storyNarrator.isEnding()) return;
         const rect = renderer.domElement.getBoundingClientRect();
         const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -474,6 +489,9 @@ function animate() {
 
         if (currentState === 'INTERACTIVE' && !isWindowFocusActive()) controls.enabled = true;
         if (isWindowFocusActive()) controls.enabled = false;
+        // Nel finale i controlli restano disabilitati: la camera guarda solo la
+        // stella (il suo lookAt non va sovrascritto da OrbitControls).
+        if (currentState === 'ENDING') controls.enabled = false;
         if (controls.enabled) controls.update();
     }
     else {

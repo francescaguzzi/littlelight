@@ -75,6 +75,33 @@ export function restoreInteractiveFromWindowFocus() {
     clearWindowFocusTarget();
 }
 
+// Finale: riporta la stellina in cielo tra le altre stelle, nella stessa
+// inquadratura dell'apertura del gioco (PANORAMIC_VIEW). Viene chiamata da
+// main.js durante il nero della cutscene conclusiva, quindi lo spostamento
+// (che è istantaneo) non è visibile.
+export function startEndingSequence(camera) {
+    clearWindowFocusTarget();
+
+    if (!littleStar) return null;
+
+    sceneState = 'ENDING';
+    stateTimer = 0;
+    starSpin = 0;
+
+    littleStar.position.set(30, 100, 0);
+
+    if (camera) {
+        camera.position.set(
+            littleStar.position.x,
+            littleStar.position.y - 5,
+            littleStar.position.z + 5
+        );
+        camera.lookAt(littleStar.position);
+    }
+
+    return littleStar.position.clone();
+}
+
 export function initLittleStar(scene) {
     const starTexture = new THREE.TextureLoader().load('./assets/other-textures/star.png');
     const littleGeo = new THREE.PlaneGeometry(0.5, 0.5);
@@ -264,6 +291,16 @@ export function updateStarLogic(camera, clock, delta) {
 
         const targetCamPos = new THREE.Vector3(camOffsetX, littleStar.position.y + 6, camOffsetZ);
         camera.position.lerp(targetCamPos, 3 * delta);
+        camera.lookAt(littleStar.position);
+    }
+    else if (sceneState === 'ENDING') {
+        // Quadro finale: la stellina brilla in cielo come all'inizio, con un
+        // dolce galleggiamento. La camera resta sotto di lei a guardarla e non
+        // avanza mai di stato.
+        littleStar.material.opacity = 1.0;
+        stateTimer += delta;
+
+        littleStar.position.y = 100 + Math.sin(clock.getElapsedTime() * 0.6) * 0.6;
         camera.lookAt(littleStar.position);
     }
 

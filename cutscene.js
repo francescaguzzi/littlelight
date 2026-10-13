@@ -90,6 +90,12 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
     let pauseElapsed = 0;
     let pauseDuration = 0;
     let isWaitingForPause = false;
+    let fadeElapsed = 0;
+    let fadeDuration = 0;
+    let fadeFrom = 0;
+    let fadeTo = 0;
+    let isWaitingForFade = false;
+    let blackoutOpacity = 0;
     let typingTimerId = null;
     let transition = null;
     let activeVignetteName = null;
@@ -99,6 +105,7 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
     let onSequenceComplete = null;
     let vignetteTextureHandler = null;
     let vignetteFlashHandler = null;
+    let storyActionHandler = null;
     let isWaitingForFlashInput = false;
     const dropSound = createDropSoundPlayer(dropSoundSrc);
 
@@ -117,6 +124,7 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
     }
 
     function setBlackoutOpacity(value) {
+        blackoutOpacity = value;
         if (blackoutElement) {
             blackoutElement.style.opacity = String(value);
         }
@@ -162,6 +170,7 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
         lineHoldElapsed = 0;
         isWaitingForLineHold = false;
         isWaitingForPause = false;
+        isWaitingForFade = false;
         isWaitingForFlashInput = false;
 
         if (activeSequence.length === 0) {
@@ -182,6 +191,7 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
             activeNarrativeType = null;
             isWaitingForLineHold = false;
             isWaitingForPause = false;
+            isWaitingForFade = false;
             isWaitingForFlashInput = false;
             activeVignetteName = null;
             isEndingPlaying = false;
@@ -203,6 +213,7 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
                 currentLineHold = currentStep.hold ?? lineHold;
                 isWaitingForLineHold = false;
                 isWaitingForPause = false;
+                isWaitingForFade = false;
                 isWaitingForFlashInput = false;
                 lineHoldElapsed = 0;
                 showText(currentStep.text, () => {
@@ -215,6 +226,7 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
             case 'pause': {
                 isWaitingForLineHold = false;
                 isWaitingForPause = true;
+                isWaitingForFade = false;
                 isWaitingForFlashInput = false;
                 pauseElapsed = 0;
                 pauseDuration = Math.max(0, currentStep.duration ?? 0);
@@ -228,13 +240,46 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
                 // continuerebbe ad avanzare saltando lo stato di input.
                 isWaitingForLineHold = false;
                 isWaitingForPause = false;
+                isWaitingForFade = false;
                 isWaitingForFlashInput = true;
+                break;
+            }
+
+            case 'fade': {
+                // Fade dell'overlay nero verso `to` in `duration` secondi.
+                // Usato dalla cutscene conclusiva per portare lo schermo a nero
+                // e per rivelare la stellina in cielo.
+                isWaitingForLineHold = false;
+                isWaitingForPause = false;
+                isWaitingForFlashInput = false;
+                isWaitingForFade = true;
+                fadeElapsed = 0;
+                fadeDuration = Math.max(0.0001, currentStep.duration ?? 0);
+                fadeFrom = blackoutOpacity;
+                fadeTo = currentStep.to ?? 0;
+                break;
+            }
+
+            case 'callback': {
+                // Azione di scena delegata a chi ha registrato l'handler
+                // (es. "showStarSky" -> riposiziona stella e camera). Non
+                // introduce attesa: prosegue subito con lo step successivo.
+                isWaitingForLineHold = false;
+                isWaitingForPause = false;
+                isWaitingForFade = false;
+                isWaitingForFlashInput = false;
+                if (typeof storyActionHandler === 'function') {
+                    storyActionHandler(currentStep.name);
+                }
+                currentStepIndex += 1;
+                processSequenceStep();
                 break;
             }
 
             case 'texture': {
                 // Mostra la texture indicata per nome sullo step: quale sia lo
                 // sa il windows controller (mappa nome -> texture in story.js).
+                isWaitingForFade = false;
                 if (typeof vignetteTextureHandler === 'function') {
                     vignetteTextureHandler(currentStep.name);
                 }
@@ -245,6 +290,7 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
 
             default: {
                 // Step sconosciuto: ignora e avanza, così la sequenza non si blocca.
+                isWaitingForFade = false;
                 currentStepIndex += 1;
                 processSequenceStep();
                 break;
@@ -322,6 +368,15 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
             if (pauseElapsed >= pauseDuration) {
                 advanceLine();
             }
+        } else if (isWaitingForFade) {
+            fadeElapsed += delta;
+            const progress = Math.min(fadeElapsed / fadeDuration, 1);
+            setBlackoutOpacity(fadeFrom + (fadeTo - fadeFrom) * progress);
+            if (progress >= 1) {
+                setBlackoutOpacity(fadeTo);
+                isWaitingForFade = false;
+                advanceLine();
+            }
         }
     }
 
@@ -387,13 +442,15 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
         startSequence(vignette.steps, NARRATIVE_TYPES.VIGNETTE);
     }
 
-    // Cutscene conclusiva: contenuto definito in STORY.ending.
+    // Cutscene conclusiva: contenuto definito in STORY.ending. Accetta sia una
+    // sequenza di step (`steps`) sia, per retro-compatibilità, un array di
+    // righe (`lines`).
     function playEnding() {
-        const lines = (endingSequence && Array.isArray(endingSequence.lines))
-            ? endingSequence.lines
-            : [];
+        const steps = (endingSequence && Array.isArray(endingSequence.steps))
+            ? endingSequence.steps
+            : (endingSequence && Array.isArray(endingSequence.lines) ? endingSequence.lines : []);
 
-        if (lines.length === 0) {
+        if (steps.length === 0) {
             clear();
             if (typeof onSequenceComplete === 'function') {
                 onSequenceComplete();
@@ -402,7 +459,7 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
         }
 
         isEndingPlaying = true;
-        startSequence(lines, NARRATIVE_TYPES.CUTSCENE);
+        startSequence(steps, NARRATIVE_TYPES.CUTSCENE);
     }
 
     function clear() {
@@ -415,6 +472,7 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
         isEndingPlaying = false;
         isWaitingForLineHold = false;
         isWaitingForPause = false;
+        isWaitingForFade = false;
         isWaitingForFlashInput = false;
         pauseElapsed = 0;
         pauseDuration = 0;
@@ -428,6 +486,9 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
         playWindowVignette,
         playEnding,
         clear,
+        isEnding() {
+            return isEndingPlaying;
+        },
         triggerFlash() {
             if (typeof vignetteFlashHandler === 'function') {
                 vignetteFlashHandler();
@@ -456,6 +517,9 @@ export function createNarrativeManager(narrativeElement, blackoutElement = null,
         },
         setFlashHandler(handler) {
             vignetteFlashHandler = handler;
+        },
+        setActionHandler(handler) {
+            storyActionHandler = handler;
         },
     };
 }
