@@ -15,6 +15,7 @@ import { setupWindows, updateWindows, handleWindowClick, cancelWindowFocus, star
 } from './windows.js';
 import { createNarrativeManager } from './cutscene.js';
 import { STORY } from './story.js';
+import { setupGameUI, showTutorial, setFlashButtonVisible, isTouchDevice } from './tutorial.js';
 
 /* ----------------------------------------------- */
 
@@ -22,6 +23,7 @@ let camera, scene, renderer, controls, composer, mixer;
 let water, model, moon, starrySky, boat;
 let windowsController;
 let appStarted = false;
+let tutorialShown = false;
 
 // Stato per il galleggiamento della barca sulle onde
 let boatBaseOffset = 0;
@@ -248,6 +250,8 @@ if (document.readyState === 'loading') {
 }
 
 function init() {
+    setupGameUI({ onFlash: () => storyNarrator.triggerFlash() });
+
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1f1c38);
     scene.environment = scene.background;
@@ -481,6 +485,17 @@ function animate() {
 
         if (currentState === 'INTERACTIVE' && windowsController && !windowsController.sequenceStarted) {
             startInteractiveWindowSequence(windowsController);
+        }
+
+        // Tutorial iniziale + bottone di sfarfallio (solo touch): compaiono alla
+        // prima entrata nella parte interattiva.
+        if (currentState === 'INTERACTIVE' && !tutorialShown) {
+            tutorialShown = true;
+            showTutorial();
+            if (isTouchDevice()) setFlashButtonVisible(true);
+        }
+        if (currentState === 'ENDING') {
+            setFlashButtonVisible(false);
         }
 
         if (currentState === 'ON_WATER' && storyAudioEnabled) {

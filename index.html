@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/png" href="./assets/stella.png">
+    <link rel="icon" type="image/png" href="./assets/other-textures/star.png">
     <title>A Little Light</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
@@ -14,6 +14,10 @@
         }
         canvas { 
             display: block; 
+        }
+        @keyframes flash-button-pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 14px rgba(255, 240, 180, 0.30); }
+            50% { transform: scale(1.06); box-shadow: 0 0 24px rgba(255, 240, 180, 0.55); }
         }
     </style>
     <script type="importmap">
@@ -126,5 +130,49 @@
         z-index: 10;
         text-align: center;
     "></div>
+
+    <div id="tutorial-overlay" style="
+        position: fixed;
+        top: clamp(4vh, 8vh, 12vh);
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: min(92vw, 560px);
+        padding: 16px 26px;
+        background: rgba(9, 9, 9, 0.72);
+        border: 2px solid rgba(217, 217, 217, 0.5);
+        color: #f2f1ff;
+        font-family: 'VT323', monospace;
+        font-size: clamp(1.3rem, 4vw, 2rem);
+        letter-spacing: 0.08em;
+        text-align: center;
+        line-height: 1.35;
+        opacity: 0;
+        pointer-events: none;
+        z-index: 12;
+    "></div>
+
+    <button id="flash-button" aria-label="Twinkle the star" style="
+        position: fixed;
+        right: clamp(18px, 6vw, 42px);
+        bottom: clamp(18px, 8vh, 48px);
+        width: 76px;
+        height: 76px;
+        padding: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid rgba(255, 255, 255, 0.55);
+        border-radius: 50%;
+        background: radial-gradient(circle at center, rgba(255, 244, 200, 0.22), rgba(255, 244, 200, 0.04) 70%, rgba(0, 0, 0, 0));
+        color: #f5f5f5;
+        cursor: pointer;
+        z-index: 16;
+        opacity: 0.9;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+        animation: flash-button-pulse 2.4s ease-in-out infinite;
+    ">
+        <img src="./assets/other-textures/star.png" alt="" style="width: 60%; height: 60%; object-fit: contain; pointer-events: none; filter: drop-shadow(0 0 6px rgba(255, 240, 180, 0.8));">
+    </button>
 </body>
 </html>
